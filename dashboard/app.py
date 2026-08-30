@@ -16,8 +16,8 @@ if "interval" not in st.session_state:
     st.session_state.interval = 10
 
 st.sidebar.title("🖥️ System Monitor")
-window = st.sidebar.selectbox("Janela", ["1 hour", "6 hours", "24 hours", "7 days"], index=0, key="window")
-auto = st.sidebar.checkbox("Auto-refresh", value=True, key="auto", help="Atualiza dados sem voltar à Overview")
+window = st.sidebar.selectbox("Janela", ["1 hour", "6 hours", "24 hours", "7 days"], key="window")
+auto = st.sidebar.checkbox("Auto-refresh", key="auto", help="Atualiza dados sem voltar à Overview")
 interval = st.sidebar.slider("Intervalo (s)", 5, 60, 10, key="interval", disabled=not st.session_state.auto)
 if st.session_state.auto:
     st.sidebar.caption(f"Atualiza a cada {interval}s • aba atual preservada")
@@ -89,7 +89,7 @@ def render_content():
                 df = pd.DataFrame(cpu_data, columns=["ts","cpu","freq"])
                 fig = px.line(df, x="ts", y="cpu", title="CPU Total %")
                 fig.update_layout(height=300, margin=dict(l=10,r=10,t=40,b=10))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             else:
                 st.info("Sem dados CPU")
         with c2:
@@ -98,7 +98,7 @@ def render_content():
                 df = pd.DataFrame(mem_data, columns=["ts","used_percent","used_gb","swap"])
                 fig = px.line(df, x="ts", y="used_percent", title="Memória usada %")
                 fig.update_layout(height=300)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             else:
                 st.info("Sem dados memória")
         c3, c4 = st.columns(2)
@@ -110,17 +110,17 @@ def render_content():
                 fig.add_trace(go.Scatter(x=df["ts"], y=df["temp"], name="Temp C", yaxis="y"))
                 fig.add_trace(go.Scatter(x=df["ts"], y=df["util"], name="Util %", yaxis="y2"))
                 fig.update_layout(title="GPU Temp & Utilização", yaxis=dict(title="Temp C"), yaxis2=dict(title="Util %", overlaying="y", side="right"), height=300)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
         with c4:
             if disk:
                 df = pd.DataFrame(disk, columns=["device","mount","used_percent","free_gb","ts"])
                 fig = px.bar(df, x="device", y="used_percent", title="Uso disco % por volume (SSD/HDD)", text="used_percent")
                 fig.update_layout(height=300)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
         hb = q.q_heartbeat()
         if hb:
             dfhb = pd.DataFrame(hb, columns=["host","collector","ts","success","error"])
-            st.dataframe(dfhb, use_container_width=True, height=200)
+            st.dataframe(dfhb, width='stretch', height=200)
 
     with tabs[1]:
         cpu_temps = q.q_cpu_temps(window_f)
@@ -134,17 +134,17 @@ def render_content():
         if cpu_data:
             df = pd.DataFrame(cpu_data, columns=["ts","cpu","freq"])
             fig = px.line(df, x="ts", y="cpu", title="CPU % ao longo do tempo")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             fig2 = px.line(df, x="ts", y="freq", title="Frequência MHz")
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
             if cpu_temps:
                 dft = pd.DataFrame(cpu_temps, columns=["ts","name","value"])
                 for name in dft["name"].unique()[:4]:
                     sub = dft[dft["name"]==name]
                     fig3 = px.line(sub, x="ts", y="value", title=f"CPU Temperatura - {name.split(':')[-1]}")
                     fig3.update_layout(yaxis_title="°C")
-                    st.plotly_chart(fig3, use_container_width=True)
-            st.dataframe(df.tail(20), use_container_width=True)
+                    st.plotly_chart(fig3, width='stretch')
+            st.dataframe(df.tail(20), width='stretch')
         else:
             st.warning("Sem dados CPU para janela")
 
@@ -153,18 +153,18 @@ def render_content():
         if mem_data:
             df = pd.DataFrame(mem_data, columns=["ts","used_percent","used_gb","swap"])
             fig = px.area(df, x="ts", y="used_percent", title="Memória %")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             fig2 = px.line(df, x="ts", y="used_gb", title="Memória usada GB")
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
             st.dataframe(df.tail(20))
 
     with tabs[3]:
         gpu_data = q.q_gpu(window_f)
         if gpu_data:
             df = pd.DataFrame(gpu_data, columns=["ts","temp","util","power","vram"])
-            st.plotly_chart(px.line(df, x="ts", y="temp", title="GPU Temperatura C"), use_container_width=True)
-            st.plotly_chart(px.line(df, x="ts", y="util", title="GPU Utilização %"), use_container_width=True)
-            st.plotly_chart(px.line(df, x="ts", y="power", title="GPU Power W"), use_container_width=True)
+            st.plotly_chart(px.line(df, x="ts", y="temp", title="GPU Temperatura C"), width='stretch')
+            st.plotly_chart(px.line(df, x="ts", y="util", title="GPU Utilização %"), width='stretch')
+            st.plotly_chart(px.line(df, x="ts", y="power", title="GPU Power W"), width='stretch')
             st.dataframe(df.tail(20))
         else:
             st.info("Sem dados GPU")
@@ -177,7 +177,7 @@ def render_content():
             if stype != "todos":
                 dfl = dfl[dfl["type"]==stype]
             dfl_sorted = dfl.sort_values("value", ascending=False).head(30)
-            st.dataframe(dfl_sorted, use_container_width=True, height=400)
+            st.dataframe(dfl_sorted, width='stretch', height=400)
             if not dfl_sorted.empty:
                 sel = st.selectbox("Ver histórico de", dfl_sorted["name"].head(10).tolist(), key="sens_sel")
                 hist = q.q_sensors(window_f, stype if stype!="todos" else None)
@@ -185,7 +185,7 @@ def render_content():
                 dfh = dfh[dfh["name"]==sel]
                 if not dfh.empty:
                     fig = px.line(dfh, x="ts", y="value", title=f"{sel} ao longo do tempo")
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
         else:
             st.info("Sem sensores")
 
@@ -194,19 +194,19 @@ def render_content():
         disk = q.q_disk_usage()
         if disk:
             df = pd.DataFrame(disk, columns=["device","mount","used_percent","free_gb","ts"])
-            df["free_gb"] = df["free_gb"].round(1)
-            st.dataframe(df[["device","mount","used_percent","free_gb","ts"]], use_container_width=True)
+            df["free_gb"] = pd.to_numeric(df["free_gb"], errors='coerce').round(1)
+            st.dataframe(df[["device","mount","used_percent","free_gb","ts"]], width='stretch')
             fig = px.bar(df, x="device", y="used_percent", title="Uso disco % por volume", text="used_percent", color="used_percent", color_continuous_scale="RdYlGn_r")
             fig.update_layout(height=350)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         # Physical disks (SSD/HDD/NVMe) - dados de hardware real
         st.subheader("Discos físicos (SSD/HDD/NVMe) - saúde")
         try:
             phys = q.q_physical_disk()
             if phys:
                 dfp = pd.DataFrame(phys, columns=["device_id","friendly_name","model","media_type","bus_type","health_status","size_gb","ts"])
-                dfp["size_gb"] = dfp["size_gb"].round(0)
-                st.dataframe(dfp[["device_id","friendly_name","media_type","bus_type","health_status","size_gb"]], use_container_width=True)
+                dfp["size_gb"] = pd.to_numeric(dfp["size_gb"], errors='coerce').round(0)
+                st.dataframe(dfp[["device_id","friendly_name","media_type","bus_type","health_status","size_gb"]], width='stretch')
             else:
                 st.info("Sem dados physical_disk")
         except Exception as e:
@@ -217,19 +217,19 @@ def render_content():
             smart = q.q_disk_smart_latest()
             if smart:
                 dfs = pd.DataFrame(smart, columns=["device","model","temp","poh","pcycles","wear","spare","media_err","realloc","pending","passed","ts"])
-                # formatação
-                dfs["temp"] = dfs["temp"].round(0)
-                dfs["wear"] = dfs["wear"].fillna(0)
-                st.dataframe(dfs[["device","model","temp","poh","wear","spare","media_err","realloc","pending","passed"]], use_container_width=True)
+                # formatação segura para None
+                dfs["temp"] = pd.to_numeric(dfs["temp"], errors='coerce').round(0)
+                dfs["wear"] = pd.to_numeric(dfs["wear"], errors='coerce').fillna(0)
+                st.dataframe(dfs[["device","model","temp","poh","wear","spare","media_err","realloc","pending","passed"]], width='stretch')
                 # gráfico temperatura discos
                 hist = q.q_disk_smart_history(window_f)
                 if hist:
                     dfh = pd.DataFrame(hist, columns=["ts","device","temp","poh","wear"])
                     fig = px.line(dfh, x="ts", y="temp", color="device", title="Temperatura discos °C (SMART + NVMe)")
                     fig.update_layout(height=350, yaxis_title="°C")
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                     fig2 = px.line(dfh, x="ts", y="wear", color="device", title="Desgaste % usado (NVMe percentage_used)")
-                    st.plotly_chart(fig2, use_container_width=True)
+                    st.plotly_chart(fig2, width='stretch')
                 # explica outros dados possíveis
                 with st.expander("Quais outros dados SMART disponíveis?"):
                     st.markdown("""
@@ -261,7 +261,7 @@ def render_content():
                 fig.add_trace(go.Scatter(x=sub["ts"], y=sub["read_mb_s"], name="Read MB/s"))
                 fig.add_trace(go.Scatter(x=sub["ts"], y=sub["write_mb_s"], name="Write MB/s"))
                 fig.update_layout(title=f"Disco {dev} throughput MB/s (intervalo 10s)", height=300)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
         else:
             st.info("Sem dados disk_io")
 
@@ -272,7 +272,7 @@ def render_content():
             df_latest = pd.DataFrame(net_latest, columns=["iface","recv","sent","ts"])
             df_latest["recv_mb"] = df_latest["recv"]/1024/1024
             df_latest["sent_mb"] = df_latest["sent"]/1024/1024
-            st.dataframe(df_latest[["iface","recv_mb","sent_mb","ts"]].round(1), use_container_width=True)
+            st.dataframe(df_latest[["iface","recv_mb","sent_mb","ts"]].round(1), width='stretch')
             st.caption("Total acumulado desde boot - bytes enviados/recebidos por interface")
         if net:
             dfn = pd.DataFrame(net, columns=["ts","iface","recv","sent"])
@@ -289,14 +289,14 @@ def render_content():
                 fig.add_trace(go.Scatter(x=sub["ts"], y=sub["recv_kbs"], name="RX KB/s"))
                 fig.add_trace(go.Scatter(x=sub["ts"], y=sub["sent_kbs"], name="TX KB/s"))
                 fig.update_layout(title=f"Rede {iface} throughput KB/s (intervalo 10s)", height=300)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             st.caption("Gráficos acima são taxa (delta 10s). Abaixo total acumulado MB")
             for iface in dfn["iface"].unique()[:2]:
                 sub = dfn[dfn["iface"]==iface]
                 sub["recv_mb"] = sub["recv"]/1024/1024
                 sub["sent_mb"] = sub["sent"]/1024/1024
                 fig = px.line(sub, x="ts", y="recv_mb", title=f"{iface} total RX MB")
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             st.dataframe(dfn.tail(20))
         else:
             st.info("Sem dados rede")
@@ -305,11 +305,11 @@ def render_content():
         procs = q.q_processes()
         if procs:
             dfp = pd.DataFrame(procs, columns=["name","pid","cpu","mem","rss_mb","user"])
-            st.dataframe(dfp, use_container_width=True)
+            st.dataframe(dfp, width='stretch')
             fig = px.bar(dfp.head(10), x="name", y="cpu", title="Top CPU %")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             fig2 = px.bar(dfp.head(10), x="name", y="rss_mb", title="Top RSS MB")
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
         else:
             st.info("Sem processos")
 
@@ -320,7 +320,7 @@ def render_content():
         ev = q.q_eventlog(window_f)
         if ev:
             dfe = pd.DataFrame(ev, columns=["log","level","provider","id","count","msg"])
-            st.dataframe(dfe, use_container_width=True)
+            st.dataframe(dfe, width='stretch')
         hb = q.q_heartbeat()
         if hb:
             st.dataframe(pd.DataFrame(hb, columns=["host","collector","ts","success","error"]))
@@ -328,3 +328,4 @@ def render_content():
 render_content()
 
 st.sidebar.caption("DB: system_monitor @ localhost:5432 | Histórico permanente (ENABLE_RETENTION=false)")
+
