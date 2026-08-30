@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+env/
+*.egg-info/
+dist/
+build/
+*.log
+*.sqlite
+*.db
+
+# Env & secrets
+.env
+pgpass.conf
+*.pem
+*.key
+
+# Logs
+logs/*.log
+logs/*.jsonl
+!logs/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+
+# Tools
+C:\tools\LibreHardwareMonitor.zip
+C:\tools\PawnIO_setup.exe
+elevated_output.txt
+install_log.txt
+task_check.txt
+
+# Dashboard cache
+.streamlit/
+.dashboard_cache/
+
+# Data
+*.csv
+*.json.bak
+
+# Editors
+.vscode/
+.idea/
+*.code-workspace
