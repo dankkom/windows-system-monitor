@@ -3,44 +3,57 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#070a0f">
 <title>System Monitor</title>
 <link rel="stylesheet" href="/static/style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <header>
-  <h1>🖥️ System Monitor</h1>
-  <div id="header-metrics" class="metrics"></div>
+  <h1>System Monitor</h1>
+  <div id="header-metrics" aria-live="polite" aria-label="Métricas do host"></div>
 </header>
-<nav id="tabs">
-  <button data-tab="overview" class="active">Overview</button>
-  <button data-tab="cpu">CPU</button>
-  <button data-tab="memory">Memória</button>
-  <button data-tab="gpu">GPU</button>
-  <button data-tab="sensors">Sensores</button>
-  <button data-tab="disk">Disco</button>
-  <button data-tab="net">Rede</button>
-  <button data-tab="processes">Processos</button>
-  <button data-tab="system">Sistema</button>
+
+<nav id="tabs" role="tablist" aria-label="Seções">
+  <button role="tab" data-tab="overview" class="active" aria-selected="true">Overview</button>
+  <button role="tab" data-tab="cpu" aria-selected="false">CPU</button>
+  <button role="tab" data-tab="memory" aria-selected="false">Memória</button>
+  <button role="tab" data-tab="gpu" aria-selected="false">GPU</button>
+  <button role="tab" data-tab="sensors" aria-selected="false">Sensores</button>
+  <button role="tab" data-tab="disk" aria-selected="false">Disco</button>
+  <button role="tab" data-tab="net" aria-selected="false">Rede</button>
+  <button role="tab" data-tab="processes" aria-selected="false">Processos</button>
+  <button role="tab" data-tab="system" aria-selected="false">Sistema</button>
 </nav>
-<div id="controls">
-  <label>Janela: <select id="window"><option value="1 hour" selected>1h</option><option value="6 hours">6h</option><option value="24 hours">24h</option><option value="7 days">7d</option></select></label>
-  <label><input type="checkbox" id="auto" checked> Auto-refresh</label>
-  <label>Intervalo <input type="range" id="interval" min="5" max="60" value="10"> <span id="interval-val">10s</span></label>
-  <button id="refresh">🔄 Atualizar</button>
+
+<div id="controls" role="toolbar" aria-label="Controles">
+  <label for="window">Janela <select id="window" aria-label="Janela de histórico">
+    <option value="1 hour" selected>1h</option>
+    <option value="6 hours">6h</option>
+    <option value="24 hours">24h</option>
+    <option value="7 days">7d</option>
+  </select></label>
+  <span id="window-hint" class="subtle" hidden>sem histórico nesta aba</span>
+  <label><input type="checkbox" id="auto" checked> auto</label>
+  <label for="interval">a cada <input type="range" id="interval" min="5" max="60" value="10" aria-label="Intervalo de atualização"> <span id="interval-val">10s</span></label>
+  <button id="refresh" type="button">Atualizar</button>
+  <span id="last-updated" class="subtle" aria-live="polite"></span>
 </div>
+
 <main>
-  <section id="tab-overview" class="tab active"></section>
-  <section id="tab-cpu" class="tab"></section>
-  <section id="tab-memory" class="tab"></section>
-  <section id="tab-gpu" class="tab"></section>
-  <section id="tab-sensors" class="tab"></section>
-  <section id="tab-disk" class="tab"></section>
-  <section id="tab-net" class="tab"></section>
-  <section id="tab-processes" class="tab"></section>
-  <section id="tab-system" class="tab"></section>
+  <section id="tab-overview" class="tab active" role="tabpanel"></section>
+  <section id="tab-cpu" class="tab" role="tabpanel" hidden></section>
+  <section id="tab-memory" class="tab" role="tabpanel" hidden></section>
+  <section id="tab-gpu" class="tab" role="tabpanel" hidden></section>
+  <section id="tab-sensors" class="tab" role="tabpanel" hidden></section>
+  <section id="tab-disk" class="tab" role="tabpanel" hidden></section>
+  <section id="tab-net" class="tab" role="tabpanel" hidden></section>
+  <section id="tab-processes" class="tab" role="tabpanel" hidden></section>
+  <section id="tab-system" class="tab" role="tabpanel" hidden></section>
 </main>
-<footer>DB: system_monitor @ localhost:5432 | Histórico permanente</footer>
+
+<footer>system_monitor @ localhost:5432 · histórico permanente · <span id="footer-db"></span></footer>
 <script src="/static/app.js"></script>
 </body>
 </html>

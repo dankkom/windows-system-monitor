@@ -1,191 +1,430 @@
-let currentTab = localStorage.getItem('tab') || 'overview';
-let charts = {};
+const S = {
+  tab: localStorage.getItem('tab') || 'overview',
+  win: localStorage.getItem('win') || '1 hour',
+  intervalSec: parseInt(localStorage.getItem('interval') || '10', 10),
+  timer: null,
+  charts: {},
+  mounted: new Set(),
+  abort: null,
+};
 
-function setTab(tab){
-  currentTab = tab;
-  localStorage.setItem('tab', tab);
-  document.querySelectorAll('nav#tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
-  document.querySelectorAll('.tab').forEach(s=>s.classList.toggle('active', s.id==='tab-'+tab));
-  loadTab(tab);
+const windowTabs = new Set(['overview','cpu','memory','gpu','sensors','disk','net']);
+const els = {};
+
+function init(){
+  els.tabs = document.querySelectorAll('nav#tabs button');
+  els.panels = document.querySelectorAll('.tab');
+  els.win = document.getElementById('window');
+  els.winHint = document.getElementById('window-hint');
+  els.auto = document.getElementById('auto');
+  els.interval = document.getElementById('interval');
+  els.intervalVal = document.getElementById('interval-val');
+  els.refresh = document.getElementById('refresh');
+  els.lastUpdated = document.getElementById('last-updated');
+  els.header = document.getElementById('header-metrics');
+  els.footerDb = document.getElementById('footer-db');
+
+  els.win.value = S.win;
+  els.interval.value = String(S.intervalSec);
+  els.intervalVal.textContent = S.intervalSec + 's';
+
+  els.tabs.forEach(b=> b.addEventListener('click', ()=> setTab(b.dataset.tab)));
+  els.win.addEventListener('change', ()=>{
+    S.win = els.win.value;
+    localStorage.setItem('win', S.win);
+    updateCurrent({force:true});
+  });
+  els.refresh.addEventListener('click', ()=> updateCurrent({force:true}));
+  els.auto.addEventListener('change', ()=> { if(els.auto.checked) schedule(); else unschedule(); });
+  els.interval.addEventListener('input', e=>{
+    S.intervalSec = parseInt(e.target.value,10);
+    els.intervalVal.textContent = S.intervalSec + 's';
+    localStorage.setItem('interval', String(S.intervalSec));
+  });
+  els.interval.addEventListener('change', ()=> { if(els.auto.checked) schedule(); });
+
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden) unschedule();
+    else if(els.auto.checked) schedule();
+  });
+
+  setTab(S.tab, {forceMount:true});
+  loadHeader();
+  schedule();
 }
 
-document.querySelectorAll('nav#tabs button').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
-document.getElementById('window').addEventListener('change',()=>loadTab(currentTab));
-document.getElementById('refresh').addEventListener('click',()=>loadTab(currentTab));
-document.getElementById('interval').addEventListener('input',e=>{document.getElementById('interval-val').textContent=e.target.value+'s'});
+function setTab(tab, opts={}){
+  S.tab = tab;
+  localStorage.setItem('tab', tab);
+  const isWindowTab = windowTabs.has(tab);
+  els.win.disabled = !isWindowTab;
+  els.winHint.hidden = isWindowTab;
+  els.tabs.forEach(b=>{
+    const active = b.dataset.tab===tab;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-selected', String(active));
+  });
+  els.panels.forEach(p=>{
+    const active = p.id==='tab-'+tab;
+    p.classList.toggle('active', active);
+    p.hidden = !active;
+  });
+  ensureMounted(tab);
+  updateCurrent(opts);
+}
 
-function poll(){
-  if(document.getElementById('auto').checked && !document.hidden){
-    loadTab(currentTab);
-    loadHeader();
+function ensureMounted(tab){
+  if(S.mounted.has(tab)) return;
+  const el = document.getElementById('tab-'+tab);
+  if(!el) return;
+  // skeleton flat — sem caixas, só divisores
+  if(tab==='overview'){
+    el.innerHTML = `
+      <div class="section"><h2>Histórico</h2><div class="grid">
+        <div><h3>CPU %</h3><div class="chart-wrap"><canvas id="ov-cpu"></canvas></div></div>
+        <div><h3>Memória %</h3><div class="chart-wrap"><canvas id="ov-mem"></canvas></div></div>
+        <div><h3>GPU</h3><div class="chart-wrap"><canvas id="ov-gpu"></canvas></div></div>
+        <div><h3>Disco usado %</h3><div class="chart-wrap"><canvas id="ov-disk"></canvas></div></div>
+      </div></div>
+      <div class="section"><h2>Rede</h2><div id="ov-net"><div class="skeleton" style="width:60%"></div></div></div>`;
+  } else if(tab==='cpu'){
+    el.innerHTML = `
+      <div class="section"><h2>CPU</h2>
+        <div class="grid">
+          <div><h3>Uso %</h3><div class="chart-wrap"><canvas id="cpu-cpu"></canvas></div></div>
+          <div><h3>Frequência MHz</h3><div class="chart-wrap"><canvas id="cpu-freq"></canvas></div></div>
+        </div>
+      </div>
+      <div class="section"><h2>Temperaturas</h2><div id="cpu-temps"><div class="skeleton" style="width:40%"></div></div></div>`;
+  } else if(tab==='memory'){
+    el.innerHTML = `
+      <div class="section"><h2>Memória</h2><div class="grid">
+        <div><h3>Uso %</h3><div class="chart-wrap"><canvas id="mem-p"></canvas></div></div>
+        <div><h3>Usada GB</h3><div class="chart-wrap"><canvas id="mem-gb"></canvas></div></div>
+      </div></div>`;
+  } else if(tab==='gpu'){
+    el.innerHTML = `
+      <div class="section"><h2>GPU</h2><div class="grid">
+        <div><h3>Temperatura °C</h3><div class="chart-wrap"><canvas id="gpu-temp"></canvas></div></div>
+        <div><h3>Utilização %</h3><div class="chart-wrap"><canvas id="gpu-util"></canvas></div></div>
+        <div><h3>Power W</h3><div class="chart-wrap"><canvas id="gpu-power"></canvas></div></div>
+      </div></div>`;
+  } else if(tab==='sensors'){
+    el.innerHTML = `<div class="section"><h2>Sensores</h2><div id="sensors-table"><div class="skeleton"></div></div><p class="subtle">Mostra últimos valores por sensor (sem janela)</p></div>`;
+  } else if(tab==='disk'){
+    el.innerHTML = `
+      <div class="section"><h2>Volumes</h2><div id="disk-usage" class="table-wrap"><div class="skeleton"></div></div></div>
+      <div class="section"><h2>Físicos</h2><div id="disk-phys" class="table-wrap"><div class="skeleton"></div></div></div>
+      <div class="section"><h2>SMART</h2><div id="disk-smart" class="table-wrap"><div class="skeleton"></div></div></div>
+      <div class="section"><h2>SMART temperatura</h2><div class="chart-wrap tall"><canvas id="disk-temp"></canvas></div></div>`;
+  } else if(tab==='net'){
+    el.innerHTML = `
+      <div class="section"><h2>Totais por interface</h2><div id="net-latest" class="table-wrap"><div class="skeleton"></div></div></div>
+      <div class="section"><h2>Throughput</h2><div class="chart-wrap"><canvas id="net-kbs"></canvas></div><p class="subtle">Delta a cada ~10s na janela selecionada</p></div>`;
+  } else if(tab==='processes'){
+    el.innerHTML = `<div class="section"><h2>Top 15 por CPU</h2><div id="proc-table" class="table-wrap"><div class="skeleton"></div></div><p class="subtle">Snapshot mais recente</p></div>`;
+  } else if(tab==='system'){
+    el.innerHTML = `<div class="section"><h2>Sistema</h2><pre id="sys-pre" class="subtle" style="white-space:pre-wrap;word-break:break-all;margin:0"></pre></div>
+      <div class="section"><h2>Heartbeat</h2><div id="hb-table" class="table-wrap"><div class="skeleton"></div></div></div>`;
+  }
+  S.mounted.add(tab);
+}
+
+function schedule(){
+  unschedule();
+  if(!els.auto.checked || document.hidden) return;
+  S.timer = setTimeout(async ()=>{
+    await updateCurrent();
+    await loadHeader();
+    schedule();
+  }, S.intervalSec * 1000);
+}
+function unschedule(){ if(S.timer){ clearTimeout(S.timer); S.timer=null; } }
+
+async function updateCurrent(opts={}){
+  const tab = S.tab;
+  // não apaga DOM no poll — só atualiza dados
+  try{
+    if(tab==='overview') await updateOverview(opts);
+    else if(tab==='cpu') await updateCpu(opts);
+    else if(tab==='memory') await updateMemory(opts);
+    else if(tab==='gpu') await updateGpu(opts);
+    else if(tab==='sensors') await updateSensors(opts);
+    else if(tab==='disk') await updateDisk(opts);
+    else if(tab==='net') await updateNet(opts);
+    else if(tab==='processes') await updateProcesses(opts);
+    else if(tab==='system') await updateSystem(opts);
+    els.lastUpdated.textContent = 'atualizado ' + new Date().toLocaleTimeString();
+  }catch(e){
+    console.error(e);
+    // mostra erro discreto sem apagar charts
+    const el = document.getElementById('tab-'+tab);
+    if(el && !el.querySelector('.err')){
+      const d=document.createElement('p'); d.className='err subtle'; d.style.color='#f87171'; d.textContent='erro ao atualizar';
+      el.prepend(d); setTimeout(()=>d.remove(), 4000);
+    }
   }
 }
-setInterval(poll, parseInt(document.getElementById('interval').value)*1000);
-document.getElementById('interval').addEventListener('change',()=>{
-  // interval change handled via next poll
-});
 
 async function fetchJSON(url){
-  const r = await fetch(url);
+  if(S.abort) S.abort.abort();
+  S.abort = new AbortController();
+  const r = await fetch(url, {signal: S.abort.signal, headers:{'Cache-Control':'no-store'}});
+  if(!r.ok) throw new Error(url+' '+r.status);
   return r.json();
 }
 
 async function loadHeader(){
-  const sys = await fetchJSON('/api/system');
-  const db = await fetchJSON('/api/db_size');
-  const el = document.getElementById('header-metrics');
-  if(sys && db){
-    el.innerHTML = `<div>Host ${sys.hostname}</div><div>Uptime ${Math.floor(sys.uptime/3600)}h</div><div>DB ${db.size}</div><div>RAM ${sys.ram_gb?.toFixed(1)}GB</div>`;
-  }
-}
-
-function mkTable(rows, cols){
-  if(!rows.length) return '<p>Sem dados</p>';
-  let h='<table><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr>';
-  rows.forEach(r=>{
-    h+='<tr>'+cols.map(c=>`<td>${r[c]!==undefined && r[c]!==null ? r[c] : ''}</td>`).join('')+'</tr>';
-  });
-  return h+'</table>';
-}
-
-function chart(id, data, label, xKey='ts', yKey='value'){
-  const ctx = document.getElementById(id);
-  if(!ctx) return;
-  if(charts[id]) charts[id].destroy();
-  charts[id] = new Chart(ctx, {
-    type:'line',
-    data:{labels:data.map(d=>new Date(d[xKey]).toLocaleTimeString()), datasets:[{label, data:data.map(d=>d[yKey]), borderColor:'#2e7ff1', tension:0.2, pointRadius:0}]},
-    options:{responsive:true, animation:false, scales:{y:{beginAtZero:false}}, plugins:{decimation:{enabled:true}}}
-  });
-}
-
-async function loadTab(tab){
-  const win = document.getElementById('window').value;
-  const el = document.getElementById('tab-'+tab);
-  if(!el) return;
-  el.innerHTML = '<p>Carregando...</p>';
   try{
-    if(tab==='overview'){
-      const [cpu,mem,gpu,disk,net] = await Promise.all([
-        fetchJSON('/api/cpu?window='+encodeURIComponent(win)),
-        fetchJSON('/api/memory?window='+encodeURIComponent(win)),
-        fetchJSON('/api/gpu?window='+encodeURIComponent(win)),
-        fetchJSON('/api/disk/usage'),
-        fetchJSON('/api/net/latest')
-      ]);
-      el.innerHTML = `<div class="grid">
-        <div class="card"><h3>CPU %</h3><canvas id="ov-cpu"></canvas></div>
-        <div class="card"><h3>Memória %</h3><canvas id="ov-mem"></canvas></div>
-        <div class="card"><h3>GPU Temp/Util</h3><canvas id="ov-gpu"></canvas></div>
-        <div class="card"><h3>Disco uso %</h3><canvas id="ov-disk"></canvas></div>
-      </div><div id="ov-net"></div>`;
-      if(cpu.length) chart('ov-cpu', cpu, 'CPU %', 'ts', 'cpu');
-      if(mem.length) chart('ov-mem', mem, 'Mem %', 'ts', 'used_percent');
-      if(gpu.length){
-        const ctx=document.getElementById('ov-gpu');
-        if(ctx){
-          if(charts['ov-gpu']) charts['ov-gpu'].destroy();
-          charts['ov-gpu']= new Chart(ctx, {type:'line', data:{labels:gpu.map(d=>new Date(d.ts).toLocaleTimeString()), datasets:[{label:'Temp C', data:gpu.map(d=>d.temp), borderColor:'#ef4444', yAxisID:'y'},{label:'Util %', data:gpu.map(d=>d.util), borderColor:'#22c55e', yAxisID:'y1'}]}, options:{responsive:true, animation:false, scales:{y:{type:'linear',position:'left', title:{display:true,text:'Temp C'}}, y1:{type:'linear',position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'Util %'}}}}});
-        }
-      }
-      if(disk.length){
-        const ctx=document.getElementById('ov-disk');
-        if(ctx){
-          if(charts['ov-disk']) charts['ov-disk'].destroy();
-          charts['ov-disk']= new Chart(ctx, {type:'bar', data:{labels:disk.map(d=>d.device), datasets:[{label:'usado %', data:disk.map(d=>d.used_percent), backgroundColor:'#2e7ff1'}]}, options:{responsive:true, animation:false}});
-        }
-      }
-      if(net.length){
-        document.getElementById('ov-net').innerHTML = '<div class="card"><h3>Rede (total MB)</h3>'+mkTable(net.map(r=>({iface:r.iface, recv: (r.recv/1024/1024).toFixed(1), sent:(r.sent/1024/1024).toFixed(1)})), ['iface','recv','sent'])+'</div>';
-      }
-    } else if(tab==='cpu'){
-      const [cpu, temps] = await Promise.all([fetchJSON('/api/cpu?window='+encodeURIComponent(win)), fetchJSON('/api/sensors/cpu_temps?window='+encodeURIComponent(win))]);
-      el.innerHTML = `<div class="card"><h3>CPU %</h3><canvas id="cpu-cpu"></canvas></div><div class="card"><h3>Frequência MHz</h3><canvas id="cpu-freq"></canvas></div><div id="cpu-temps"></div>`;
-      if(cpu.length){
-        chart('cpu-cpu', cpu, 'CPU %', 'ts', 'cpu');
-        // freq
-        setTimeout(()=>{
-          const ctx=document.getElementById('cpu-freq');
-          if(ctx){
-            if(charts['cpu-freq']) charts['cpu-freq'].destroy();
-            charts['cpu-freq']= new Chart(ctx, {type:'line', data:{labels:cpu.map(d=>new Date(d.ts).toLocaleTimeString()), datasets:[{label:'Freq MHz', data:cpu.map(d=>d.freq), borderColor:'#a855f7'}]}, options:{responsive:true, animation:false}});
-          }
-        },0);
-      }
-      if(temps.length){
-        // group by name
-        const groups={};
-        temps.forEach(t=>{ (groups[t.name]=groups[t.name]||[]).push(t); });
-        let html='';
-        Object.keys(groups).slice(0,4).forEach(name=>{
-          const id='cpu-temp-'+name.replace(/[^a-z0-9]/gi,'_');
-          html+=`<div class="card"><h3>${name.split(':').pop()}</h3><canvas id="${id}"></canvas></div>`;
-        });
-        document.getElementById('cpu-temps').innerHTML=html;
-        Object.keys(groups).slice(0,4).forEach(name=>{
-          const id='cpu-temp-'+name.replace(/[^a-z0-9]/gi,'_');
-          chart(id, groups[name], '°C', 'ts', 'value');
-        });
-      }
-    } else if(tab==='memory'){
-      const mem = await fetchJSON('/api/memory?window='+encodeURIComponent(win));
-      el.innerHTML='<div class="card"><h3>Memória %</h3><canvas id="mem-p"></canvas></div><div class="card"><h3>Usada GB</h3><canvas id="mem-gb"></canvas></div>';
-      if(mem.length){
-        chart('mem-p', mem, 'used %', 'ts', 'used_percent');
-        setTimeout(()=>chart('mem-gb', mem, 'GB', 'ts', 'used_gb'),0);
-      }
-    } else if(tab==='gpu'){
-      const gpu = await fetchJSON('/api/gpu?window='+encodeURIComponent(win));
-      el.innerHTML='<div class="card"><h3>GPU Temp</h3><canvas id="gpu-temp"></canvas></div><div class="card"><h3>GPU Util</h3><canvas id="gpu-util"></canvas></div><div class="card"><h3>Power W</h3><canvas id="gpu-power"></canvas></div>';
-      if(gpu.length){
-        chart('gpu-temp', gpu, 'Temp C', 'ts', 'temp');
-        setTimeout(()=>{
-          chart('gpu-util', gpu, 'Util %', 'ts', 'util');
-          chart('gpu-power', gpu, 'Power', 'ts', 'power');
-        },0);
-      }
-    } else if(tab==='sensors'){
-      const latest = await fetchJSON('/api/sensors/latest');
-      el.innerHTML = '<div class="card"><h3>Sensores (latest 30)</h3>'+mkTable(latest.slice(0,30).map(r=>({name:r.name.slice(0,50), type:r.type, value:r.value, unit:r.unit})), ['name','type','value','unit'])+'</div>';
-    } else if(tab==='disk'){
-      const [usage, phys, smart] = await Promise.all([fetchJSON('/api/disk/usage'), fetchJSON('/api/disk/physical'), fetchJSON('/api/disk/smart')]);
-      el.innerHTML = `<div class="card"><h3>Volumes</h3>${mkTable(usage.map(r=>({device:r.device, mount:r.mount, used:r.used_percent, free:r.free_gb?.toFixed(1)})), ['device','mount','used','free'])}</div>
-        <div class="card"><h3>Físicos</h3>${mkTable(phys.map(r=>({id:r.device_id, name:r.friendly_name, type:r.media_type, bus:r.bus_type, health:r.health, size:Math.round(r.size_gb)})), ['id','name','type','bus','health','size'])}</div>
-        <div class="card"><h3>SMART</h3>${mkTable(smart.map(r=>({dev:r.device, model:r.model, temp:r.temp, poh:r.poh, wear:r.wear, passed:r.passed})), ['dev','model','temp','poh','wear','passed'])}</div><div class="card"><h3>SMART Temperatura</h3><canvas id="disk-temp"></canvas></div>`;
-      if(smart.length){
-        // fetch history for chart
-        const hist = await fetchJSON('/api/disk/smart/history?window='+encodeURIComponent(win));
-        // hist not implemented as endpoint, use smart history via direct? For now skip
-      }
-    } else if(tab==='net'){
-      const [latest, hist] = await Promise.all([fetchJSON('/api/net/latest'), fetchJSON('/api/net?window='+encodeURIComponent(win))]);
-      el.innerHTML = '<div class="card"><h3>Rede total MB</h3>'+mkTable(latest.map(r=>({iface:r.iface, recv:(r.recv/1024/1024).toFixed(1), sent:(r.sent/1024/1024).toFixed(1)})), ['iface','recv','sent'])+'</div><div class="card"><h3>Throughput KB/s</h3><canvas id="net-kbs"></canvas></div>';
-      if(hist.length){
-        // compute delta per iface simple: group
-        const byIface={};
-        hist.forEach(r=>{ (byIface[r.iface]=byIface[r.iface]||[]).push(r); });
-        const iface = Object.keys(byIface).find(k=>k==='Wi-Fi') || Object.keys(byIface)[0];
-        if(iface){
-          const arr = byIface[iface].sort((a,b)=>new Date(a.ts)-new Date(b.ts));
-          const withDelta = arr.map((v,i)=> i===0? null : {...v, recv_kbs:(v.recv - arr[i-1].recv)/1024/10, sent_kbs:(v.sent - arr[i-1].sent)/1024/10}).filter(Boolean);
-          chart('net-kbs', withDelta, 'RX KB/s', 'ts', 'recv_kbs');
-        }
-      }
-    } else if(tab==='processes'){
-      const procs = await fetchJSON('/api/processes');
-      el.innerHTML = '<div class="card"><h3>Top 15 CPU</h3>'+mkTable(procs.map(r=>({name:r.name, pid:r.pid, cpu:r.cpu?.toFixed(1), mem:r.mem?.toFixed(1), rss:r.rss_mb?.toFixed(0)})), ['name','pid','cpu','mem','rss'])+'</div>';
-    } else if(tab==='system'){
-      const sys = await fetchJSON('/api/system');
-      const hb = await fetchJSON('/api/heartbeat');
-      el.innerHTML = `<div class="card"><pre>${JSON.stringify(sys,null,2)}</pre></div><div class="card"><h3>Heartbeat</h3>${mkTable(hb.map(r=>({collector:r.collector, success:r.success, ts:new Date(r.ts).toLocaleTimeString()})), ['collector','success','ts'])}</div>`;
+    const [sys, db] = await Promise.all([fetchJSON('/api/system'), fetchJSON('/api/db_size')]);
+    if(sys && db){
+      els.header.innerHTML = `<span><strong>${sys.hostname||''}</strong></span><span class="sep">·</span><span>up ${Math.floor((sys.uptime||0)/3600)}h</span><span class="sep">·</span><span>${sys.ram_gb? sys.ram_gb.toFixed(1)+'GB RAM':''}</span><span class="sep">·</span><span>DB ${db.size}</span>`;
+      if(els.footerDb) els.footerDb.textContent = `${db.size} · ${db.cpu_rows} cpu rows · ${db.sensor_rows} sensores`;
     }
-  } catch(e){
-    el.innerHTML = '<p style="color:#f87171">Erro: '+e+'</p>';
-    console.error(e);
+  }catch(e){ /* silencioso */ }
+}
+
+// ---- chart helpers (update diferencial, sem destroy) ----
+function upsertChart(id, labels, datasets, extra={}){
+  const canvas = document.getElementById(id);
+  if(!canvas) return;
+  const existing = S.charts[id];
+  if(existing){
+    existing.data.labels = labels;
+    existing.data.datasets = datasets;
+    Object.assign(existing.options, extra);
+    existing.update('none');
+    return existing;
+  }
+  const ctx = canvas.getContext('2d');
+  const c = new Chart(ctx, {
+    type: datasets[0]?.type || 'line',
+    data: {labels, datasets},
+    options: {
+      responsive:true, maintainAspectRatio:false, animation:false,
+      interaction:{mode:'index', intersect:false},
+      plugins:{legend:{labels:{color:'#8a94a6', boxWidth:12, font:{size:11}}}, decimation:{enabled:true}},
+      scales:{
+        x:{ticks:{color:'#6b7585', maxTicksLimit:6}, grid:{color:'rgba(255,255,255,.06)'}},
+        y:{ticks:{color:'#6b7585'}, grid:{color:'rgba(255,255,255,.06)'}}
+      },
+      ...extra
+    }
+  });
+  S.charts[id]=c;
+  return c;
+}
+function fmtTime(ts){ return new Date(ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}); }
+
+function tableHTML(rows, cols){
+  if(!rows.length) return '<p class="subtle">sem dados</p>';
+  let h='<table><thead><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>';
+  rows.forEach(r=>{
+    h+='<tr>'+cols.map(c=>{
+      const v=r[c];
+      return `<td>${v!==undefined && v!==null ? String(v) : '<span class="muted">—</span>'}</td>`;
+    }).join('')+'</tr>';
+  });
+  return h+'</tbody></table>';
+}
+
+// ---- tab updaters ----
+async function updateOverview(){
+  const win = S.win;
+  const [cpu, mem, gpu, disk, net] = await Promise.all([
+    fetchJSON('/api/cpu?window='+encodeURIComponent(win)),
+    fetchJSON('/api/memory?window='+encodeURIComponent(win)),
+    fetchJSON('/api/gpu?window='+encodeURIComponent(win)),
+    fetchJSON('/api/disk/usage'),
+    fetchJSON('/api/net/latest'),
+  ]);
+  if(cpu.length){
+    const labels=cpu.map(d=>fmtTime(d.ts));
+    upsertChart('ov-cpu', labels, [{label:'CPU %', data:cpu.map(d=>d.cpu), borderColor:'#2e7ff1', borderWidth:1.4, pointRadius:0, tension:.25}]);
+  }
+  if(mem.length){
+    const labels=mem.map(d=>fmtTime(d.ts));
+    upsertChart('ov-mem', labels, [{label:'Mem %', data:mem.map(d=>d.used_percent), borderColor:'#22c55e', borderWidth:1.4, pointRadius:0, tension:.25}]);
+  }
+  if(gpu.length){
+    const labels=gpu.map(d=>fmtTime(d.ts));
+    const existing=S.charts['ov-gpu'];
+    if(existing){
+      existing.data.labels=labels;
+      existing.data.datasets[0].data=gpu.map(d=>d.temp);
+      existing.data.datasets[1].data=gpu.map(d=>d.util);
+      existing.update('none');
+    } else {
+      upsertChart('ov-gpu', labels, [
+        {label:'Temp °C', data:gpu.map(d=>d.temp), borderColor:'#ef4444', borderWidth:1.3, pointRadius:0, tension:.2, yAxisID:'y'},
+        {label:'Util %', data:gpu.map(d=>d.util), borderColor:'#22c55e', borderWidth:1.3, pointRadius:0, tension:.2, yAxisID:'y1'}
+      ], {scales:{y:{type:'linear',position:'left', title:{display:true,text:'°C',color:'#8a94a6'}}, y1:{type:'linear',position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'%',color:'#8a94a6'}}, x:{ticks:{color:'#6b7585'}, grid:{color:'rgba(255,255,255,.06)'}}}});
+    }
+  }
+  if(disk.length){
+    const labels=disk.map(d=>d.device);
+    const vals=disk.map(d=>d.used_percent);
+    // bar chart diferencial
+    const id='ov-disk';
+    const canvas=document.getElementById(id);
+    if(canvas){
+      if(S.charts[id]){
+        S.charts[id].data.labels=labels;
+        S.charts[id].data.datasets[0].data=vals;
+        S.charts[id].update('none');
+      } else {
+        upsertChart(id, labels, [{type:'bar', label:'usado %', data:vals, backgroundColor:'rgba(46,127,241,.85)', borderWidth:0}], {scales:{y:{max:100}}});
+      }
+    }
+  }
+  const netEl=document.getElementById('ov-net');
+  if(netEl) netEl.innerHTML = tableHTML(net.map(r=>({iface:r.iface, recv:(r.recv/1024/1024).toFixed(1)+' MB', sent:(r.sent/1024/1024).toFixed(1)+' MB'})), ['iface','recv','sent']);
+}
+
+async function updateCpu(){
+  const win=S.win;
+  const [cpu, temps] = await Promise.all([fetchJSON('/api/cpu?window='+encodeURIComponent(win)), fetchJSON('/api/sensors/cpu_temps?window='+encodeURIComponent(win))]);
+  if(cpu.length){
+    const labels=cpu.map(d=>fmtTime(d.ts));
+    upsertChart('cpu-cpu', labels, [{label:'CPU %', data:cpu.map(d=>d.cpu), borderColor:'#2e7ff1', pointRadius:0, tension:.2}]);
+    upsertChart('cpu-freq', labels, [{label:'MHz', data:cpu.map(d=>d.freq), borderColor:'#a855f7', pointRadius:0, tension:.2}]);
+  }
+  if(temps.length){
+    const groups={};
+    temps.forEach(t=>{ (groups[t.name]=groups[t.name]||[]).push(t); });
+    const container=document.getElementById('cpu-temps');
+    // monta estrutura de temps apenas uma vez (sem recriar canvas que já tem chart)
+    const wanted = Object.keys(groups).slice(0,4);
+    const existingIds = new Set([...container.querySelectorAll('canvas')].map(c=>c.id));
+    const wantedIds = new Set(wanted.map(n=>'cpu-temp-'+n.replace(/[^a-z0-9]/gi,'_')));
+    // remove excedentes
+    [...container.children].forEach(ch=>{
+      const cv=ch.querySelector('canvas');
+      if(cv && !wantedIds.has(cv.id)) ch.remove();
+    });
+    wanted.forEach(name=>{
+      const id='cpu-temp-'+name.replace(/[^a-z0-9]/gi,'_');
+      if(!existingIds.has(id)){
+        const div=document.createElement('div');
+        div.innerHTML=`<h3>${name.split(':').pop()}</h3><div class="chart-wrap"><canvas id="${id}"></canvas></div>`;
+        // inserir como section flat
+        const sec=document.createElement('div'); sec.className='section'; sec.style.borderTop='1px solid var(--hairline)'; sec.style.paddingTop='14px'; sec.appendChild(div);
+        container.appendChild(sec);
+      }
+    });
+    wanted.forEach(name=>{
+      const id='cpu-temp-'+name.replace(/[^a-z0-9]/gi,'_');
+      const arr=groups[name];
+      const labels=arr.map(d=>fmtTime(d.ts));
+      upsertChart(id, labels, [{label:'°C', data:arr.map(d=>d.value), borderColor:'#ef4444', pointRadius:0, tension:.15}]);
+    });
   }
 }
 
-// init
-setTab(currentTab);
-loadHeader();
-loadTab(currentTab);
+async function updateMemory(){
+  const mem = await fetchJSON('/api/memory?window='+encodeURIComponent(S.win));
+  if(mem.length){
+    const labels=mem.map(d=>fmtTime(d.ts));
+    upsertChart('mem-p', labels, [{label:'%', data:mem.map(d=>d.used_percent), borderColor:'#22c55e', pointRadius:0, tension:.2}]);
+    upsertChart('mem-gb', labels, [{label:'GB', data:mem.map(d=>d.used_gb), borderColor:'#2e7ff1', pointRadius:0, tension:.2}]);
+  }
+}
+
+async function updateGpu(){
+  const gpu = await fetchJSON('/api/gpu?window='+encodeURIComponent(S.win));
+  if(gpu.length){
+    const labels=gpu.map(d=>fmtTime(d.ts));
+    upsertChart('gpu-temp', labels, [{label:'°C', data:gpu.map(d=>d.temp), borderColor:'#ef4444', pointRadius:0, tension:.2}]);
+    upsertChart('gpu-util', labels, [{label:'%', data:gpu.map(d=>d.util), borderColor:'#22c55e', pointRadius:0, tension:.2}]);
+    upsertChart('gpu-power', labels, [{label:'W', data:gpu.map(d=>d.power), borderColor:'#f59e0b', pointRadius:0, tension:.2}]);
+  }
+}
+
+async function updateSensors(){
+  const latest = await fetchJSON('/api/sensors/latest');
+  const el=document.getElementById('sensors-table');
+  if(el) el.innerHTML = tableHTML(latest.slice(0,50).map(r=>({name:r.name.slice(0,64), type:r.type, value:r.value, unit:r.unit||''})), ['name','type','value','unit']);
+}
+
+async function updateDisk(){
+  const [usage, phys, smart] = await Promise.all([fetchJSON('/api/disk/usage'), fetchJSON('/api/disk/physical'), fetchJSON('/api/disk/smart')]);
+  document.getElementById('disk-usage').innerHTML = tableHTML(usage.map(r=>({device:r.device, mount:r.mount, used:(r.used_percent!=null?r.used_percent+'%':''), free:r.free_gb!=null? r.free_gb.toFixed(1)+' GB':''})), ['device','mount','used','free']);
+  document.getElementById('disk-phys').innerHTML = tableHTML(phys.map(r=>({id:r.device_id, name:(r.friendly_name||r.model||'').slice(0,28), type:r.media_type||'', bus:r.bus_type||'', health:r.health||'', size:r.size_gb!=null? Math.round(r.size_gb)+' GB':''})), ['id','name','type','bus','health','size']);
+  document.getElementById('disk-smart').innerHTML = tableHTML(smart.map(r=>({dev:r.device, model:(r.model||'').slice(0,20), temp:r.temp!=null? r.temp+'°C':'', poh:r.poh||'', wear:r.wear!=null? r.wear+'%':'', passed:String(r.passed)})), ['dev','model','temp','poh','wear','passed']);
+  // histórico temperatura SMART — respeita janela
+  try{
+    const hist = await fetchJSON('/api/disk/smart/history?window='+encodeURIComponent(S.win));
+    if(hist.length){
+      const byDev={};
+      hist.forEach(r=>{ (byDev[r.device]=byDev[r.device]||[]).push(r); });
+      const labelsByDev = {};
+      const datasets=[];
+      const colors=['#2e7ff1','#22c55e','#ef4444','#a855f7'];
+      let ci=0;
+      for(const dev in byDev){
+        const arr=byDev[dev].sort((a,b)=> new Date(a.ts)-new Date(b.ts));
+        if(!datasets.length) labelsByDev.labels = arr.map(d=>fmtTime(d.ts));
+        datasets.push({label:dev, data:arr.map(d=>d.temp), borderColor:colors[ci%colors.length], pointRadius:0, tension:.2});
+        ci++;
+        if(ci>=4) break;
+      }
+      const id='disk-temp';
+      if(datasets.length){
+        if(S.charts[id]){
+          S.charts[id].data.labels=labelsByDev.labels;
+          S.charts[id].data.datasets=datasets;
+          S.charts[id].update('none');
+        } else {
+          upsertChart(id, labelsByDev.labels, datasets);
+        }
+      }
+    }
+  }catch(e){ /* sem histórico ainda */ }
+}
+
+async function updateNet(){
+  const [latest, hist] = await Promise.all([fetchJSON('/api/net/latest'), fetchJSON('/api/net?window='+encodeURIComponent(S.win))]);
+  document.getElementById('net-latest').innerHTML = tableHTML(latest.map(r=>({iface:r.iface, recv:(r.recv/1024/1024).toFixed(1)+' MB', sent:(r.sent/1024/1024).toFixed(1)+' MB'})), ['iface','recv','sent']);
+  if(hist.length){
+    const byIface={};
+    hist.forEach(r=>{ (byIface[r.iface]=byIface[r.iface]||[]).push(r); });
+    const iface = Object.keys(byIface).find(k=>k==='Wi-Fi') || Object.keys(byIface)[0];
+    if(iface){
+      const arr=byIface[iface].sort((a,b)=> new Date(a.ts)-new Date(b.ts));
+      const withDelta = arr.slice(1).map((v,i)=>{
+        const prev=arr[i];
+        const dt=(new Date(v.ts)-new Date(prev.ts))/1000;
+        const recv_kbs= dt>0 ? (v.recv - prev.recv)/1024/dt : 0;
+        const sent_kbs= dt>0 ? (v.sent - prev.sent)/1024/dt : 0;
+        return {...v, recv_kbs: Math.max(0,recv_kbs), sent_kbs: Math.max(0,sent_kbs)};
+      });
+      const labels=withDelta.map(d=>fmtTime(d.ts));
+      const id='net-kbs';
+      if(S.charts[id]){
+        S.charts[id].data.labels=labels;
+        S.charts[id].data.datasets[0].data=withDelta.map(d=>d.recv_kbs);
+        S.charts[id].data.datasets[1].data=withDelta.map(d=>d.sent_kbs);
+        S.charts[id].update('none');
+      } else {
+        upsertChart(id, labels, [
+          {label:'RX KB/s', data:withDelta.map(d=>d.recv_kbs), borderColor:'#2e7ff1', pointRadius:0, tension:.2},
+          {label:'TX KB/s', data:withDelta.map(d=>d.sent_kbs), borderColor:'#22c55e', pointRadius:0, tension:.2}
+        ]);
+      }
+    }
+  }
+}
+
+async function updateProcesses(){
+  const procs = await fetchJSON('/api/processes');
+  document.getElementById('proc-table').innerHTML = tableHTML(procs.map(r=>({name:(r.name||'').slice(0,28), pid:r.pid, cpu:r.cpu!=null? r.cpu.toFixed(1):'', mem:r.mem!=null? r.mem.toFixed(1):'', rss:r.rss_mb!=null? r.rss_mb.toFixed(0):''})), ['name','pid','cpu','mem','rss']);
+}
+
+async function updateSystem(){
+  const [sys, hb] = await Promise.all([fetchJSON('/api/system'), fetchJSON('/api/heartbeat')]);
+  const pre=document.getElementById('sys-pre');
+  if(pre) pre.textContent = sys ? JSON.stringify(sys,null,2) : '—';
+  document.getElementById('hb-table').innerHTML = tableHTML(hb.map(r=>({collector:r.collector, success:String(r.success), ts:new Date(r.ts).toLocaleTimeString()})), ['collector','success','ts']);
+}
+
+init();

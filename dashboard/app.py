@@ -1,10 +1,17 @@
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, make_response
 try:
     import queries_light as q
 except ImportError:
     from . import queries_light as q
 
 app = Flask(__name__)
+
+@app.after_request
+def no_store(resp):
+    # APIs não devem ser cacheadas; HTML pode ser cacheado levemente
+    if request.path.startswith('/api/'):
+        resp.headers['Cache-Control'] = 'no-store, max-age=0'
+    return resp
 
 @app.route("/")
 def index():
@@ -49,6 +56,11 @@ def api_physical():
 @app.route("/api/disk/smart")
 def api_smart():
     return jsonify(q.q_disk_smart_latest())
+
+@app.route("/api/disk/smart/history")
+def api_smart_history():
+    window = request.args.get("window", "1 hour")
+    return jsonify(q.q_disk_smart_history(window))
 
 @app.route("/api/disk/io")
 def api_disk_io():

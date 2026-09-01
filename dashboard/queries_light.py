@@ -82,6 +82,14 @@ def q_disk_smart_latest():
             rows = cur.fetchall()
             return [{"device": r[0], "model": r[1], "temp": r[2], "poh": r[3], "pcycles": r[4], "wear": r[5], "spare": r[6], "media_err": r[7], "realloc": r[8], "pending": r[9], "passed": r[10], "ts": r[11].isoformat()} for r in rows]
 
+def q_disk_smart_history(window="1 hour"):
+    sql = "SELECT ts, device, temperature_c FROM monitor.disk_smart WHERE ts > now() - %s::interval AND temperature_c IS NOT NULL ORDER BY device, ts"
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (window,))
+            rows = cur.fetchall()
+            return [{"ts": r[0].isoformat(), "device": r[1], "temp": r[2]} for r in rows]
+
 def q_disk_io(window="1 hour"):
     sql = "SELECT ts, device, read_bytes, write_bytes FROM monitor.disk_io WHERE ts > now() - %s::interval ORDER BY device, ts"
     with get_conn() as conn:
