@@ -133,9 +133,7 @@ if (-not ($exists -match '1')) {
     Write-Host "Criando banco $DbName..." -ForegroundColor Yellow
     Invoke-Psql -Arguments @("-U", $DbUser, "-h", $DbHost, "-p", $DbPort, "-d", "postgres", "-c", "CREATE DATABASE $DbName OWNER $DbUser;") -Failure "Nao foi possivel criar o banco $DbName." | Out-Host
 }
-foreach ($sql in "sql\schema.sql", "sql\disk_extra.sql") {
-    Invoke-Psql -Arguments @("-U", $DbUser, "-h", $DbHost, "-p", $DbPort, "-d", $DbName, "-f", (Join-Path $Root $sql)) -Failure "Falha ao aplicar $sql." | Out-Host
-}
+Invoke-Psql -Arguments @("-U", $DbUser, "-h", $DbHost, "-p", $DbPort, "-d", $DbName, "-f", (Join-Path $Root "sql\schema.sql")) -Failure "Falha ao aplicar sql\schema.sql." | Out-Host
 
 Write-Host "[5/6] Teste de coleta" -ForegroundColor Cyan
 $ErrorActionPreference = "Continue"
@@ -146,7 +144,7 @@ $dryRunOutput | Select-String "\[DRY" | Select-Object -First 3 | Out-Host
 if ($dryRunExit -ne 0) { throw "Dry-run do monitor falhou (codigo $dryRunExit)." }
 
 Write-Host "[6/6] Tarefas de inicializacao" -ForegroundColor Cyan
-& (Join-Path $Root "install_tasks.ps1")
+& (Join-Path $Root "scripts\install_tasks.ps1")
 $dashboardReady = $false
 for ($attempt = 0; $attempt -lt 15; $attempt++) {
     Start-Sleep -Seconds 1

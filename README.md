@@ -30,25 +30,32 @@ Coleta **contínua e máxima** de telemetria do PC Windows (AMD Ryzen 7 5700X + 
 ```
 C:\code\windows-system-monitor/
 ├── .venv/                    # ambiente uv isolado
-├── collectors/               # 10 módulos (cpu, memory, disk, disk_smart, network, gpu, sensors, processes, connections, services, system)
+├── collectors/               # 11 módulos (cpu, memory, disk, disk_smart, network, gpu, sensors, processes, connections, services, system)
 ├── dashboard/                # Flask + Chart.js leve (~50 MB, waitress)
-│   ├── app.py                # Flask 9 rotas /api/* + / (Chart.js, polling preserva aba)
+│   ├── app.py                # Flask rotas /api/* + / (Chart.js, polling preserva aba)
 │   ├── queries_light.py      # SQL parametrizado sem pandas
+│   ├── serve.py              # Entrypoint waitress
 │   ├── templates/index.html  # tabs CSS + Chart.js 4.4 CDN
-│   └── static/app.js/style.css
-├── sql/
-│   ├── schema.sql            # 14 tabelas + índices + view
-│   ├── disk_extra.sql        # physical_disk + disk_smart
-│   └── queries.sql           # 10 queries úteis
+│   └── static/app.js / style.css
+├── docs/
+│   ├── hardware_sensors.md   # Notas LibreHardwareMonitor/PawnIO
+│   └── CHANGELOG.md
 ├── jobs/
 │   ├── retention.py          # DELETE opcional (ENABLE_RETENTION=false por padrão → histórico permanente)
 │   └── retention_task.ps1
-├── config.py / db.py / monitor.py # loop, buffer SQLite e heartbeat
+├── scripts/
+│   ├── install_tasks.ps1     # Registra tarefas no Task Scheduler (SYSTEM Highest)
+│   ├── start_monitor.ps1     # Inicia as tarefas agendadas
+│   └── stop_monitor.ps1      # Para as tarefas agendadas
+├── sql/
+│   ├── schema.sql            # 16 tabelas + índices + view (inclui physical_disk e disk_smart)
+│   └── queries.sql           # Queries úteis de referência
+├── tests/                    # Pytest (dashboard, sensors, spool)
+├── config.py / db.py / monitor.py / spool.py  # loop, buffer SQLite e heartbeat
 ├── .env.example → .env       # DATABASE_URL, INTERVAL_*, ENABLE_RETENTION
-├── pyproject.toml + uv.lock   # dependencias travadas; requirements e fallback pip
-├── install_tasks.ps1            # Task Scheduler (SYSTEM Highest - boot automático)
-├── setup.ps1                 # bootstrap reproduzível
-└── logs/ (RotatingFileHandler 10MB)
+├── pyproject.toml + uv.lock  # dependências travadas; requirements.txt como fallback pip
+├── setup.ps1                 # Bootstrap idempotente completo
+└── logs/                     # RotatingFileHandler 10 MB
 ```
 
 **Fluxo:** `monitor.py` loop → `collectors/*.collect(hostname)` → `db.insert_batch` (`psycopg3 executemany`) → `heartbeat` → `logs/monitor.log`. `dashboard` lê `psycopg` direto. Histórico nunca apagado (`DELETE` só se `ENABLE_RETENTION=true`).
@@ -81,7 +88,6 @@ copy .env.example .env  # ajuste DATABASE_URL
 # DB (requer PGPASSWORD ou pgpass)
 $env:PGPASSWORD="sua_senha"; psql -U postgres -h localhost -d postgres -c "CREATE DATABASE system_monitor OWNER postgres;"
 psql -U postgres -h localhost -d system_monitor -f sql\schema.sql
-psql -U postgres -h localhost -d system_monitor -f sql\disk_extra.sql
 
 # 3. Dependências externas (portáteis - já inclusas em C:\tools se usou setup.ps1)
 # LibreHardwareMonitor 0.9.6: https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases/download/v0.9.6/LibreHardwareMonitor.zip -> C:\tools\LibreHardwareMonitor
@@ -97,9 +103,9 @@ psql -U postgres -h localhost -d system_monitor -c "SELECT count(*) FROM monitor
 # 5. Apos o setup, as tarefas SystemMonitor e SystemMonitor-Dashboard
 # iniciam no boot, mesmo sem logon. Acesse http://127.0.0.1:8501.
 # Para reparar apenas as tarefas, execute como Administrador:
-powershell -ExecutionPolicy Bypass -File .\install_tasks.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\install_tasks.ps1
 
-# 7. Retenção opcional (desabilitada por padrão)
+# 6. Retenção opcional (desabilitada por padrão)
 # .env ENABLE_RETENTION=true e:
 powershell -ExecutionPolicy Bypass -File .\jobs\retention_task.ps1
 .\.venv\Scripts\python.exe jobs\retention.py --dry
@@ -137,9 +143,9 @@ Invoke-WebRequest http://127.0.0.1:8501/api/health -UseBasicParsing
 Invoke-WebRequest http://127.0.0.1:8501/api/ready -UseBasicParsing
 Invoke-WebRequest http://127.0.0.1:8501/api/status -UseBasicParsing
 # parar
-Get-Process pythonw | Stop-Process -Force  # ou .\stop_monitor.ps1 (requer Bypass)
+.\scripts\stop_monitor.ps1  # ou: Stop-ScheduledTask -TaskName SystemMonitor, SystemMonitor-Dashboard
 # iniciar
-.\start_monitor.ps1  # ou Start-ScheduledTask -TaskName SystemMonitor
+.\scripts\start_monitor.ps1  # ou: Start-ScheduledTask -TaskName SystemMonitor
 ```
 
 ## Dashboard técnico
@@ -177,11 +183,11 @@ fonte, fórmula e limitações diretamente na interface.
 | `sensors` só 1 linha `no_sensor` | Não elevado + sem LibreHardwareMonitor | `C:\tools\PawnIO_setup.exe /S` + `RunAs` → 309 sensores |
 | `disk_smart` vazio | `smartctl` não no PATH | `C:\Program Files\smartmontools\bin\smartctl.exe` hard-coded, verifique `smartctl --scan` |
 | `psql` timeout | `pgpass.conf` sem `system_monitor` | `localhost:5432:system_monitor:postgres:senha` + `127.0.0.1:5432:*:postgres:senha` |
-| `Task LastTaskResult 1` | `SYSTEM` sem permissão pasta | Use `install_tasks.ps1` como admin |
+| `Task LastTaskResult 1` | `SYSTEM` sem permissão pasta | Use `scripts\install_tasks.ps1` como admin |
 | Dashboard volta à Overview | `meta refresh` Streamlit | Trocado por Flask `fetch` + `localStorage` (preserva aba) |
 
 ## Projeto
 
-- **Estrutura** ver `tree` acima. `venv` isolado (~50 MB Flask vs 211 MB Streamlit), `.gitignore` exclui `venv/`, `logs/*.log`, `.env`.
-- **Versionado** com Git (`git log --oneline`). Reprodutível via `setup.ps1` + `.env.example` + `requirements*.txt` + `sql/*.sql`.
+- **Estrutura** ver `tree` acima. `.venv` isolado (~50 MB Flask vs 211 MB Streamlit), `.gitignore` exclui `.venv/`, `logs/*.log`, `.env`.
+- **Versionado** com Git (`git log --oneline`). Reprodutível via `setup.ps1` + `.env.example` + `pyproject.toml` + `sql/schema.sql`.
 - **Licença** MPL-2.0 (LibreHardwareMonitor) + MIT para código próprio.
