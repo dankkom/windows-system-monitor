@@ -301,18 +301,10 @@ async function updateOverview(){
   }
   if(gpu.length){
     const labels=gpu.map(d=>fmtTime(d.ts));
-    const existing=S.charts['ov-gpu'];
-    if(existing){
-      existing.data.labels=labels;
-      existing.data.datasets[0].data=gpu.map(d=>d.temp);
-      existing.data.datasets[1].data=gpu.map(d=>d.util);
-      existing.update('none');
-    } else {
-      upsertChart('ov-gpu', labels, [
-        {label:'Temp °C', data:gpu.map(d=>d.temp), borderColor:'#ef4444', borderWidth:1.3, pointRadius:0, tension:.2, yAxisID:'y'},
-        {label:'Util %', data:gpu.map(d=>d.util), borderColor:'#22c55e', borderWidth:1.3, pointRadius:0, tension:.2, yAxisID:'y1'}
-      ], {scales:{y:{type:'linear',position:'left', title:{display:true,text:'°C',color:'#8a94a6'}}, y1:{type:'linear',position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'%',color:'#8a94a6'}}, x:{ticks:{color:'#6b7585'}, grid:{color:'rgba(255,255,255,.06)'}}}});
-    }
+    upsertChart('ov-gpu', labels, [
+      {label:'Temp °C', data:gpu.map(d=>d.temp), borderColor:'#ef4444', borderWidth:1.3, pointRadius:0, tension:.2, yAxisID:'y'},
+      {label:'Util %', data:gpu.map(d=>d.util), borderColor:'#22c55e', borderWidth:1.3, pointRadius:0, tension:.2, yAxisID:'y1'}
+    ], {scales:{y:{type:'linear',position:'left', title:{display:true,text:'°C',color:'#8a94a6'}}, y1:{type:'linear',position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'%',color:'#8a94a6'}}}});
   }
   if(disk.length){
     const labels=disk.map(d=>d.device);
