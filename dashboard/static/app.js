@@ -228,7 +228,18 @@ function upsertChart(id, labels, datasets, extra={}){
   S.charts[id]=c;
   return c;
 }
-function fmtTime(ts){ return new Date(ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}); }
+function fmtTime(ts){
+  // ISO 8601 completo: YYYY-MM-DDTHH:mm:ss (ex: 2026-08-31T23:11:22)
+  // psycopg retorna "2026-08-31T22:59:33.905861-03:00" → truncado para ISO sem ms
+  const s = String(ts);
+  // se já for ISO, corta em 19 (YYYY-MM-DDTHH:mm:ss)
+  if(s.length >= 19 && s[4]==='-' && s[10]==='T') return s.slice(0,19);
+  try{
+    const d = new Date(s);
+    if(isNaN(d)) return s.slice(0,19);
+    return d.toISOString().slice(0,19);
+  }catch{ return s.slice(0,19); }
+}
 
 function tableHTML(rows, cols){
   if(!rows.length) return '<p class="subtle">sem dados</p>';
