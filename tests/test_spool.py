@@ -6,12 +6,12 @@ import pytest
 from spool import BatchSpool
 
 
-def new_spool(max_bytes: int) -> BatchSpool:
-    return BatchSpool(Path("logs") / f"pytest-{uuid4().hex}.sqlite3", max_bytes)
+def new_spool(tmp_path: Path, max_bytes: int) -> BatchSpool:
+    return BatchSpool(tmp_path / f"pytest-{uuid4().hex}.sqlite3", max_bytes)
 
 
-def test_replay_preserves_batch_order():
-    spool = new_spool(100_000)
+def test_replay_preserves_batch_order(tmp_path: Path):
+    spool = new_spool(tmp_path, 100_000)
     spool.enqueue("monitor.cpu", ["value"], [(1,)])
     spool.enqueue("monitor.cpu", ["value"], [(2,)])
     received = []
@@ -21,8 +21,8 @@ def test_replay_preserves_batch_order():
     assert spool.status()["pending_batches"] == 0
 
 
-def test_capacity_discards_oldest_batch():
-    spool = new_spool(30)
+def test_capacity_discards_oldest_batch(tmp_path: Path):
+    spool = new_spool(tmp_path, 30)
     spool.enqueue("monitor.cpu", ["value"], [("first payload",)])
     spool.enqueue("monitor.cpu", ["value"], [("second payload",)])
 
@@ -31,7 +31,7 @@ def test_capacity_discards_oldest_batch():
     assert received == [("second payload",)]
 
 
-def test_rejects_a_batch_larger_than_the_limit():
-    spool = new_spool(10)
+def test_rejects_a_batch_larger_than_the_limit(tmp_path: Path):
+    spool = new_spool(tmp_path, 10)
     with pytest.raises(ValueError, match="above buffer limit"):
         spool.enqueue("monitor.cpu", ["value"], [("payload larger than ten bytes",)])
