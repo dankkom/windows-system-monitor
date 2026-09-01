@@ -13,14 +13,14 @@ def _nvidia_smi_query():
         cmd = ["nvidia-smi", f"--query-gpu={fields}", "--format=csv,noheader,nounits"]
         out = subprocess.check_output(cmd, text=True, timeout=10)
         return out.strip().splitlines()
-    except Exception as e:
+    except Exception:
         # fallback without pcie
         fields2 = "index,name,uuid,driver_version,utilization.gpu,utilization.memory,memory.total,memory.used,memory.free,temperature.gpu,power.draw,power.limit,fan.speed,clocks.current.graphics,clocks.current.memory"
         try:
             cmd = ["nvidia-smi", f"--query-gpu={fields2}", "--format=csv,noheader,nounits"]
             out = subprocess.check_output(cmd, text=True, timeout=10)
             return out.strip().splitlines()
-        except Exception as e2:
+        except Exception:
             return []
 
 def _parse_val(v):

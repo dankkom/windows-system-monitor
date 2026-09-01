@@ -171,6 +171,12 @@ main{
   color:var(--fg);
 }
 .subtle{color:var(--muted);font-size:.78rem}
+.indicator-summary{margin:8px 0 4px;color:var(--muted);font-size:.75rem;line-height:1.45}
+details{font-size:.75rem;color:var(--muted-2);margin-top:4px}
+details summary{cursor:pointer;color:var(--muted);width:max-content;max-width:100%}
+details p{max-width:78ch;margin:7px 0 0;line-height:1.5}
+details strong{color:var(--fg)}
+.err{color:#f87171;border-left:2px solid #ef4444;padding-left:10px;font-size:.8rem}
 
 /* Grid — responsivo sem caixas */
 .grid{
@@ -179,12 +185,23 @@ main{
   gap:22px 28px;
 }
 .grid > div{min-width:0}
+.metric{min-width:0}
 .chart-wrap{
   position:relative;
   height:180px;
 }
 .chart-wrap.tall{height:220px}
 canvas{width:100% !important;height:100% !important;display:block}
+.chart-empty{position:absolute;inset:0;display:grid;place-items:center;margin:0;color:var(--muted-2);font-size:.78rem}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:1px;background:var(--hairline);border:1px solid var(--hairline);margin-bottom:12px}
+.card{display:flex;flex-direction:column;gap:4px;background:var(--bg);padding:12px 14px;min-height:70px}
+.card span{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}
+.card strong{font-size:1rem;font-weight:600;overflow-wrap:anywhere}
+.card.warn{box-shadow:inset 3px 0 #f59e0b}
+.card.bad{box-shadow:inset 3px 0 #ef4444}
+.selector{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.78rem;margin:0 0 14px}
+.selector select{max-width:min(100%,440px);background:var(--bg-soft);color:var(--fg);border:1px solid var(--hairline);padding:6px 8px}
 
 /* Métricas inline (sem pill) */
 .kv{
@@ -241,6 +258,7 @@ footer{
   border-top:1px solid var(--hairline);
   text-align:left;
 }
+#sys-pre{white-space:pre-wrap;word-break:break-word;margin:0}
 
 /* Responsive — best practices */
 @media (max-width:900px){

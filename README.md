@@ -28,8 +28,8 @@ Coleta **contínua e máxima** de telemetria do PC Windows (AMD Ryzen 7 5700X + 
 ## Arquitetura
 
 ```
-C:\scripts\system-monitor/
-├── venv/                     # Python 3.14.5 isolado (não polui sistema)
+C:\code\windows-system-monitor/
+├── .venv/                    # ambiente uv isolado
 ├── collectors/               # 10 módulos (cpu, memory, disk, disk_smart, network, gpu, sensors, processes, connections, services, system)
 ├── dashboard/                # Flask + Chart.js leve (~50 MB, waitress)
 │   ├── app.py                # Flask 9 rotas /api/* + / (Chart.js, polling preserva aba)
@@ -43,9 +43,9 @@ C:\scripts\system-monitor/
 ├── jobs/
 │   ├── retention.py          # DELETE opcional (ENABLE_RETENTION=false por padrão → histórico permanente)
 │   └── retention_task.ps1
-├── config.py / db.py / monitor.py # loop 1s, batch inserts, heartbeat, failed_batches.jsonl
+├── config.py / db.py / monitor.py # loop, buffer SQLite e heartbeat
 ├── .env.example → .env       # DATABASE_URL, INTERVAL_*, ENABLE_RETENTION
-├── requirements.txt + dashboard/requirements_light.txt # Flask/waitress (sem pandas/plotly)
+├── pyproject.toml + uv.lock   # dependencias travadas; requirements e fallback pip
 ├── install_task.ps1 / install_task_elevated.ps1 # Task Scheduler (S4U / SYSTEM Highest)
 ├── setup.ps1                 # bootstrap reproduzível
 └── logs/ (RotatingFileHandler 10MB)
@@ -67,19 +67,16 @@ smartctl --version
 Test-Path C:\tools\LibreHardwareMonitor\LibreHardwareMonitorLib.dll
 ```
 
-## Instalação reproduzível (com venv)
+## Instalacao reproduzivel (com uv)
 
 ```powershell
 # 1. Clone / copie pasta
-cd C:\scripts\system-monitor
+cd C:\code\windows-system-monitor
 
-# 2. Bootstrap (cria venv, instala deps, cria DB + schema)
+# 2. Instalacao unica (pede elevacao, cria .venv/DB/schema e inicia as tarefas)
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 # ou manual:
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-pip install -r dashboard\requirements_light.txt
+uv sync --frozen
 copy .env.example .env  # ajuste DATABASE_URL
 # DB (requer PGPASSWORD ou pgpass)
 $env:PGPASSWORD="sua_senha"; psql -U postgres -h localhost -d postgres -c "CREATE DATABASE system_monitor OWNER postgres;"
@@ -92,32 +89,38 @@ psql -U postgres -h localhost -d system_monitor -f sql\disk_extra.sql
 # smartmontools 7.5: winget install smartmontools.smartmontools --silent
 
 # 4. Teste sem inserir
-.\venv\Scripts\python.exe monitor.py --dry-run
-.\venv\Scripts\python.exe monitor.py --once
+.\.venv\Scripts\python.exe monitor.py --dry-run
+.\.venv\Scripts\python.exe monitor.py --once
 Get-Content logs\monitor.log -Tail 20
 psql -U postgres -h localhost -d system_monitor -c "SELECT count(*) FROM monitor.sensors; SELECT device,temperature_c FROM monitor.disk_smart ORDER BY ts DESC LIMIT 4;"
 
-# 5. Execução contínua (requer admin para temps completos 309 sensores)
-# Opção A: manual elevado (recomendado para 309 sensores)
-Start-Process .\venv\Scripts\pythonw.exe -ArgumentList "C:\scripts\system-monitor\monitor.py" -Verb RunAs
-# Opção B: Task Scheduler persistente
-powershell -ExecutionPolicy Bypass -File .\install_task_elevated.ps1  # SYSTEM Highest, AtStartup+AtLogOn (requer admin)
-# Opção C: usuário (sem admin, 127 sensores)
-powershell -ExecutionPolicy Bypass -File .\install_task.ps1
-
-# 6. Dashboard Flask leve (~50 MB)
-.\venv\Scripts\waitress-serve.exe --port=8501 --host=0.0.0.0 dashboard.app:app
-# ou Task:
-powershell -ExecutionPolicy Bypass -File .\setup_autostart.ps1  # recria SystemMonitor-Dashboard
-# Acesse http://localhost:8501 (Chart.js, polling preserva aba, sem pandas/plotly)
+# 5. Apos o setup, as tarefas SystemMonitor e SystemMonitor-Dashboard
+# iniciam no boot, mesmo sem logon. Acesse http://127.0.0.1:8501.
+# Para reparar apenas as tarefas, execute como Administrador:
+powershell -ExecutionPolicy Bypass -File .\install_tasks.ps1
 
 # 7. Retenção opcional (desabilitada por padrão)
 # .env ENABLE_RETENTION=true e:
 powershell -ExecutionPolicy Bypass -File .\jobs\retention_task.ps1
-.\venv\Scripts\python.exe jobs\retention.py --dry
+.\.venv\Scripts\python.exe jobs\retention.py --dry
 ```
 
-`setup.ps1` faz tudo acima idempotente (testa `venv`, `pip`, `psql`, `schema`, `LibreHardwareMonitor.zip`, `smartctl`).
+`setup.ps1` e idempotente: prepara dependencias, banco/schema, testa a coleta,
+registra as tarefas de boot e confirma o healthcheck do dashboard local.
+
+## Desenvolvimento
+
+`uv` e o fluxo principal e cria `.venv` com versoes travadas em `uv.lock`:
+
+```powershell
+uv sync --group dev --frozen
+.\.venv\Scripts\python.exe -m pytest -p no:cacheprovider
+.\.venv\Scripts\python.exe -m ruff check .
+```
+
+Se PostgreSQL ficar indisponivel, a coleta grava lotes em `logs\pending_batches.sqlite3`
+e tenta reenvia-los quando a conexao voltar. O buffer e limitado a 2 GB; ao atingir o
+limite, as amostras pendentes mais antigas sao descartadas.
 
 ## Uso diário
 
@@ -129,12 +132,37 @@ Get-Content logs\monitor_error.log -Tail 20
 psql -U postgres -h localhost -d system_monitor -c "SELECT * FROM monitor.v_last_heartbeat WHERE success=false;"
 psql -U postgres -h localhost -d system_monitor -c "SELECT device,model,temperature_c,power_on_hours FROM monitor.disk_smart ORDER BY ts DESC LIMIT 4;"
 # dashboard health
-Invoke-WebRequest http://localhost:8501/api/health -UseBasicParsing
+Invoke-WebRequest http://127.0.0.1:8501/api/health -UseBasicParsing
+# readiness PostgreSQL/schema e estado do buffer
+Invoke-WebRequest http://127.0.0.1:8501/api/ready -UseBasicParsing
+Invoke-WebRequest http://127.0.0.1:8501/api/status -UseBasicParsing
 # parar
 Get-Process pythonw | Stop-Process -Force  # ou .\stop_monitor.ps1 (requer Bypass)
 # iniciar
 .\start_monitor.ps1  # ou Start-ScheduledTask -TaskName SystemMonitor
 ```
+
+## Dashboard técnico
+
+O dashboard agrega as séries no PostgreSQL para manter cada gráfico limitado a
+aproximadamente 600 pontos. A aba **Disco** mostra capacidade histórica,
+throughput, IOPS, latência, ocupação e bytes acumulados na janela. A aba **Rede**
+mostra tráfego acumulado, bit/s, pacotes/s, erros, descartes e utilização do link.
+
+A aba **Energia** mantém medição e estimativa separadas:
+
+- `CPU Package` é a fonte canônica; sensores de cores/memória/platform não são
+  somados para evitar dupla contagem;
+- potência nativa da GPU é usada quando disponível; `POWER_GPU_IDLE_W` e
+  `POWER_GPU_MAX_W` habilitam um modelo linear opcional quando o driver não
+  expõe watts;
+- estimativa na tomada = `(CPU + GPU + POWER_AUX_BASELINE_W) /
+  POWER_PSU_EFFICIENCY`;
+- Wh/kWh usam integração trapezoidal e não preenchem lacunas longas.
+
+Os padrões (`30 W`, eficiência `0.90`) são apenas referência. Calibre-os com um
+medidor de tomada para comparações absolutas. Cada visual inclui definição,
+fonte, fórmula e limitações diretamente na interface.
 
 ## Retenção e tamanho
 

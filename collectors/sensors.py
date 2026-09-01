@@ -6,6 +6,11 @@ from datetime import datetime, timezone
 _LHM = None
 _LHM_ERROR = None
 
+
+def _clean_text(value):
+    """PostgreSQL text/jsonb reject NUL bytes sometimes exposed by hardware firmware."""
+    return str(value).replace("\x00", "�")
+
 def _get_lhm_computer():
     global _LHM, _LHM_ERROR
     if _LHM is not None or _LHM_ERROR is not None:
@@ -56,15 +61,15 @@ def _collect_lhm(hostname, ts):
                 hw.Update()
             except:
                 pass
-            hw_name = hw.Name
-            hw_type = str(hw.HardwareType)
-            hw_id = str(hw.Identifier)
+            hw_name = _clean_text(hw.Name)
+            hw_type = _clean_text(hw.HardwareType)
+            hw_id = _clean_text(hw.Identifier)
             for s in hw.Sensors:
                 try:
                     val = s.Value
                     if val is None:
                         continue
-                    sensor_type = str(s.SensorType).lower()  # temperature, load, clock, voltage, fan, power, data, throughput, etc
+                    sensor_type = _clean_text(s.SensorType).lower()  # temperature, load, clock, voltage, fan, power, data, throughput, etc
                     # map SensorType to our sensor_type + unit
                     unit_map = {
                         "temperature": "C",
@@ -84,8 +89,9 @@ def _collect_lhm(hostname, ts):
                     }
                     unit = unit_map.get(sensor_type, "")
                     # keep only meaningful sensors (skip noisy 0.0 package Power etc, but keep)
-                    name = f"{hw_type}:{hw_name}:{s.Name}"
-                    label = f"{hw_name} {s.Name}"
+                    sensor_name = _clean_text(s.Name)
+                    name = f"{hw_type}:{hw_name}:{sensor_name}"
+                    label = f"{hw_name} {sensor_name}"
                     rows.append((
                         ts, hostname,
                         sensor_type,
@@ -96,9 +102,9 @@ def _collect_lhm(hostname, ts):
                         json.dumps({
                             "hardware": hw_name,
                             "hardware_type": hw_type,
-                            "identifier": str(s.Identifier),
-                            "sensor": s.Name,
-                            "sensor_type": str(s.SensorType),
+                            "identifier": _clean_text(s.Identifier),
+                            "sensor": sensor_name,
+                            "sensor_type": sensor_type,
                             "hardware_id": hw_id,
                             "value": float(val)
                         })
@@ -110,21 +116,22 @@ def _collect_lhm(hostname, ts):
                     sub.Update()
                 except:
                     pass
-                sub_name = sub.Name
-                sub_type = str(sub.HardwareType)
+                sub_name = _clean_text(sub.Name)
+                sub_type = _clean_text(sub.HardwareType)
                 for s in sub.Sensors:
                     try:
                         val = s.Value
                         if val is None:
                             continue
-                        sensor_type = str(s.SensorType).lower()
+                        sensor_type = _clean_text(s.SensorType).lower()
                         unit_map = {"temperature":"C","load":"%","clock":"MHz","voltage":"V","fan":"RPM","power":"W","data":"GB","smalldata":"MB","throughput":"B/s","current":"A","energy":"Wh","noise":"dBA","control":"%","level":"%"}
                         unit = unit_map.get(sensor_type, "")
-                        name = f"{sub_type}:{sub_name}:{s.Name}"
-                        label = f"{sub_name} {s.Name}"
+                        sensor_name = _clean_text(s.Name)
+                        name = f"{sub_type}:{sub_name}:{sensor_name}"
+                        label = f"{sub_name} {sensor_name}"
                         rows.append((
                             ts, hostname, sensor_type, name, label, float(val), unit,
-                            json.dumps({"hardware": hw_name, "sub_hardware": sub_name, "hardware_type": sub_type, "identifier": str(s.Identifier), "sensor": s.Name, "sensor_type": str(s.SensorType), "value": float(val)})
+                            json.dumps({"hardware": hw_name, "sub_hardware": sub_name, "hardware_type": sub_type, "identifier": _clean_text(s.Identifier), "sensor": sensor_name, "sensor_type": sensor_type, "value": float(val)})
                         ))
                     except:
                         continue

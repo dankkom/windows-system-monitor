@@ -1,0 +1,29 @@
+[project]
+name = "windows-system-monitor"
+version = "0.1.0"
+description = "Windows telemetry collector with PostgreSQL and a local dashboard"
+requires-python = ">=3.11"
+dependencies = [
+  "flask>=3.1,<4",
+  "psutil>=6.1,<8",
+  "psycopg[binary]>=3.2,<4",
+  "python-dotenv>=1,<2",
+  "pywin32>=310; sys_platform == 'win32'",
+  "pythonnet>=3.1; sys_platform == 'win32'",
+  "pynvml>=12; sys_platform == 'win32'",
+  "waitress>=3,<4",
+  "wmi>=1.5.1; sys_platform == 'win32'",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<9", "ruff>=0.9,<1"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E9", "F"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

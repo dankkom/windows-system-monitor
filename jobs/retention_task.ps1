@@ -1,7 +1,11 @@
 # Cria Task diária 02:00 para retenção (só executa se ENABLE_RETENTION=true)
-$PythonExe = "C:\scripts\system-monitor\venv\Scripts\python.exe"
-$Script = "C:\scripts\system-monitor\jobs\retention.py"
-$Action = New-ScheduledTaskAction -Execute $PythonExe -Argument $Script -WorkingDirectory "C:\scripts\system-monitor"
+$Root = Split-Path $PSScriptRoot -Parent
+$PythonExe = Join-Path $Root "venv\Scripts\python.exe"
+$Script = Join-Path $Root "jobs\retention.py"
+if (-not (Test-Path $PythonExe)) { throw "Python do ambiente virtual não encontrado: $PythonExe. Execute setup.ps1 primeiro." }
+& $PythonExe -c "from db import ensure_schema; ensure_schema()" 2>$null
+if ($LASTEXITCODE -ne 0) { throw "Banco indisponível ou schema monitor ausente. Execute setup.ps1 e confira DATABASE_URL em .env." }
+$Action = New-ScheduledTaskAction -Execute $PythonExe -Argument $Script -WorkingDirectory $Root
 $Trigger = New-ScheduledTaskTrigger -Daily -At 02:00
 $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 $Principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Limited

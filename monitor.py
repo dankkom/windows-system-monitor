@@ -7,13 +7,12 @@ import time
 import logging
 import signal
 import sys
-import traceback
-from datetime import datetime, timezone
-from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
+import psycopg
+
 import config
-from db import insert_batch, insert_heartbeat, ensure_schema
+from db import insert_batch, insert_heartbeat, ensure_schema, replay_pending
 
 # collectors
 from collectors import cpu as col_cpu
@@ -30,7 +29,7 @@ from collectors import system as col_system
 
 # Setup logging
 log = logging.getLogger()
-log.setLevel(getattr(logging, config.LOG_LEVEL, logging.INFO))
+log.setLevel(config.SETTINGS.log_level)
 formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 
 ch = logging.StreamHandler()
@@ -60,7 +59,7 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 try:
     signal.signal(signal.SIGBREAK, signal_handler)
-except:
+except AttributeError:
     pass
 
 # Mapeia coletor -> (função, tabela, intervalo)
@@ -88,29 +87,22 @@ def run_collector(name, func, table, interval_state):
     try:
         cols, rows = func(HOSTNAME)
         if rows:
-            n = insert_batch(table, cols, rows)
+            result = insert_batch(table, cols, rows)
+            n, status = result.rows, result.status
         else:
-            n = 0
+            n, status = 0, "empty"
         duration = (time.time() - start) * 1000
-        logger.info(f"[{name}] {n} rows -> {table} ({duration:.0f}ms)")
-        insert_heartbeat(HOSTNAME, name, duration, n, True, None)
-        return True
+        logger.info("[%s] %s rows -> %s (%.0fms, %s)", name, n, table, duration, status)
+        insert_heartbeat(HOSTNAME, name, duration, n, status == "stored", None if status == "stored" else status)
+        return status
     except Exception as e:
         duration = (time.time() - start) * 1000
-        logger.error(f"[{name}] failed: {e}", exc_info=True)
-        # heartbeat de falha
+        logger.exception("[%s] failed", name)
         try:
             insert_heartbeat(HOSTNAME, name, duration, 0, False, e)
-        except:
-            pass
-        # salva batch falhado em disco para replay manual
-        try:
-            fail_path = config.LOG_DIR / "failed_batches.jsonl"
-            with open(fail_path, "a", encoding="utf-8") as f:
-                f.write(f"{datetime.now(timezone.utc).isoformat()} | {name} | {table} | {e} | {traceback.format_exc()[:1000]}\n")
-        except:
-            pass
-        return False
+        except (OSError, RuntimeError) as heartbeat_error:
+            logger.warning("heartbeat unavailable: %s", heartbeat_error)
+        return "failed"
 
 def main(once=False, dry_run=False):
     global running
@@ -119,8 +111,8 @@ def main(once=False, dry_run=False):
         if not dry_run:
             ensure_schema()
             logger.info("Schema OK")
-    except Exception as e:
-        logger.error(f"Schema check failed: {e}", exc_info=True)
+    except (psycopg.Error, RuntimeError) as e:
+        logger.exception("Schema check failed: %s", e)
         if not dry_run:
             raise
 
@@ -147,10 +139,13 @@ def main(once=False, dry_run=False):
         import psutil
         psutil.cpu_percent(interval=None)
         psutil.cpu_percent(interval=None, percpu=True)
-    except:
+    except ImportError:
         pass
     logger.info("Entering continuous loop (Ctrl+C to stop)")
     while running:
+        replayed = replay_pending()
+        if replayed:
+            logger.info("replayed %s buffered batches", replayed)
         now = time.time()
         for name, (func, table, interval) in COLLECTORS.items():
             if now - last_run[name] >= interval:

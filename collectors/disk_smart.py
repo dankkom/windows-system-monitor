@@ -14,7 +14,7 @@ def _run(cmd, timeout=10):
         return out
     except subprocess.CalledProcessError as e:
         return e.output
-    except Exception as e:
+    except Exception:
         return None
 
 def collect_physical(hostname):

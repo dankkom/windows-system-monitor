@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS monitor.disk_io (
     raw JSONB
 );
 CREATE INDEX IF NOT EXISTS idx_disk_io_ts ON monitor.disk_io (ts DESC);
+CREATE INDEX IF NOT EXISTS idx_disk_io_device_ts ON monitor.disk_io (device, ts DESC);
 
 -- 5. Network IO (por interface)
 CREATE TABLE IF NOT EXISTS monitor.net_io (
@@ -144,6 +145,7 @@ CREATE TABLE IF NOT EXISTS monitor.gpu (
     raw JSONB
 );
 CREATE INDEX IF NOT EXISTS idx_gpu_ts ON monitor.gpu (ts DESC);
+CREATE INDEX IF NOT EXISTS idx_gpu_index_ts ON monitor.gpu (gpu_index, ts DESC);
 
 -- 8. Sensors (temperaturas, fans, voltages)
 CREATE TABLE IF NOT EXISTS monitor.sensors (
@@ -158,6 +160,7 @@ CREATE TABLE IF NOT EXISTS monitor.sensors (
 );
 CREATE INDEX IF NOT EXISTS idx_sensors_ts ON monitor.sensors (ts DESC);
 CREATE INDEX IF NOT EXISTS idx_sensors_type ON monitor.sensors (sensor_type, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_sensors_type_name_ts ON monitor.sensors (sensor_type, name, ts DESC);
 
 -- 9. Processes (top N)
 CREATE TABLE IF NOT EXISTS monitor.processes (

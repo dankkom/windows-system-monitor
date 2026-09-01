@@ -1,7 +1,6 @@
 import psutil
 import platform
 import json
-import socket
 from datetime import datetime, timezone
 
 def collect(hostname):
@@ -71,8 +70,6 @@ def collect_eventlog(hostname, hours=1):
     rows = []
     try:
         import win32evtlog
-        import win32evtlogutil
-        import win32con
         logs = ["System", "Application"]
         for log_name in logs:
             hand = win32evtlog.OpenEventLog(None, log_name)

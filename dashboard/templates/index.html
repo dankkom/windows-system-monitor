@@ -21,6 +21,7 @@
   <button role="tab" data-tab="cpu" aria-selected="false">CPU</button>
   <button role="tab" data-tab="memory" aria-selected="false">Memória</button>
   <button role="tab" data-tab="gpu" aria-selected="false">GPU</button>
+  <button role="tab" data-tab="power" aria-selected="false">Energia</button>
   <button role="tab" data-tab="sensors" aria-selected="false">Sensores</button>
   <button role="tab" data-tab="disk" aria-selected="false">Disco</button>
   <button role="tab" data-tab="net" aria-selected="false">Rede</button>
@@ -31,9 +32,11 @@
 <div id="controls" role="toolbar" aria-label="Controles">
   <label for="window">Janela <select id="window" aria-label="Janela de histórico">
     <option value="1 hour" selected>1h</option>
+    <option value="15 minutes">15min</option>
     <option value="6 hours">6h</option>
     <option value="24 hours">24h</option>
     <option value="7 days">7d</option>
+    <option value="30 days">30d</option>
   </select></label>
   <span id="window-hint" class="subtle" hidden>sem histórico nesta aba</span>
   <label><input type="checkbox" id="auto" checked> auto</label>
@@ -47,6 +50,7 @@
   <section id="tab-cpu" class="tab" role="tabpanel" hidden></section>
   <section id="tab-memory" class="tab" role="tabpanel" hidden></section>
   <section id="tab-gpu" class="tab" role="tabpanel" hidden></section>
+  <section id="tab-power" class="tab" role="tabpanel" hidden></section>
   <section id="tab-sensors" class="tab" role="tabpanel" hidden></section>
   <section id="tab-disk" class="tab" role="tabpanel" hidden></section>
   <section id="tab-net" class="tab" role="tabpanel" hidden></section>
@@ -54,7 +58,7 @@
   <section id="tab-system" class="tab" role="tabpanel" hidden></section>
 </main>
 
-<footer>system_monitor @ localhost:5432 · histórico permanente · <span id="footer-db"></span></footer>
+<footer>System Monitor · histórico conforme retenção configurada · <span id="footer-db"></span></footer>
 <script src="/static/app.js"></script>
 </body>
 </html>
