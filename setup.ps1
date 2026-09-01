@@ -33,8 +33,8 @@ if (-not (Test-Path $VenvPythonw) -and (Test-Path (Join-Path $VenvDir "Scripts\p
 Write-Host "Instalando requirements..." -ForegroundColor Yellow
 & $VenvPython -m pip install --upgrade pip
 & $VenvPip install -r (Join-Path $Root "requirements.txt")
-& $VenvPip install -r (Join-Path $Root "dashboard\requirements_dash.txt")
-Write-Host "Deps OK" -ForegroundColor Green
+& $VenvPip install -r (Join-Path $Root "dashboard_light\requirements_light.txt")
+Write-Host "Deps OK (Flask leve, sem Streamlit)" -ForegroundColor Green
 
 # 4. .env
 $EnvFile = Join-Path $Root ".env"
@@ -102,6 +102,6 @@ Write-Host "`n== Setup concluído ==" -ForegroundColor Cyan
 Write-Host "Próximos passos:"
 Write-Host "  1. Ajuste .env DATABASE_URL se necessário"
 Write-Host "  2. .\venv\Scripts\python.exe monitor.py --once   # teste real"
-Write-Host "  3. Start-Process .\venv\Scripts\pythonw.exe -ArgumentList 'C:\scripts\system-monitor\monitor.py' -Verb RunAs  # elevado"
-Write-Host "  4. .\venv\Scripts\python.exe -m streamlit run dashboard\app.py --server.port 8501  # dashboard"
-Write-Host "  5. Como admin: .\install_task_elevated.ps1  +  .\dashboard\install_dashboard_task.ps1"
+Write-Host "  3. Start-Process .\venv\Scripts\pythonw.exe -ArgumentList 'C:\scripts\system-monitor\monitor.py' -Verb RunAs  # elevado 309 sensores"
+Write-Host "  4. .\venv\Scripts\waitress-serve.exe --port=8501 --host=0.0.0.0 dashboard_light.app:app  # dashboard Flask leve"
+Write-Host "  5. Como admin: .\install_task_elevated.ps1  +  powershell -File .\setup_autostart.ps1"

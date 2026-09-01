@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System Monitor</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header>
+  <h1>🖥️ System Monitor</h1>
+  <div id="header-metrics" class="metrics"></div>
+</header>
+<nav id="tabs">
+  <button data-tab="overview" class="active">Overview</button>
+  <button data-tab="cpu">CPU</button>
+  <button data-tab="memory">Memória</button>
+  <button data-tab="gpu">GPU</button>
+  <button data-tab="sensors">Sensores</button>
+  <button data-tab="disk">Disco</button>
+  <button data-tab="net">Rede</button>
+  <button data-tab="processes">Processos</button>
+  <button data-tab="system">Sistema</button>
+</nav>
+<div id="controls">
+  <label>Janela: <select id="window"><option value="1 hour" selected>1h</option><option value="6 hours">6h</option><option value="24 hours">24h</option><option value="7 days">7d</option></select></label>
+  <label><input type="checkbox" id="auto" checked> Auto-refresh</label>
+  <label>Intervalo <input type="range" id="interval" min="5" max="60" value="10"> <span id="interval-val">10s</span></label>
+  <button id="refresh">🔄 Atualizar</button>
+</div>
+<main>
+  <section id="tab-overview" class="tab active"></section>
+  <section id="tab-cpu" class="tab"></section>
+  <section id="tab-memory" class="tab"></section>
+  <section id="tab-gpu" class="tab"></section>
+  <section id="tab-sensors" class="tab"></section>
+  <section id="tab-disk" class="tab"></section>
+  <section id="tab-net" class="tab"></section>
+  <section id="tab-processes" class="tab"></section>
+  <section id="tab-system" class="tab"></section>
+</main>
+<footer>DB: system_monitor @ localhost:5432 | Histórico permanente</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -8,7 +8,8 @@ $ErrorActionPreference = "Continue"
 $VenvPythonw = "C:\scripts\system-monitor\venv\Scripts\pythonw.exe"
 $VenvPython = "C:\scripts\system-monitor\venv\Scripts\python.exe"
 $MonitorScript = "C:\scripts\system-monitor\monitor.py"
-$DashboardDir = "C:\scripts\system-monitor\dashboard"
+$DashboardDir = "C:\scripts\system-monitor\dashboard_light"
+$VenvWaitress = "C:\scripts\system-monitor\venv\Scripts\waitress-serve.exe"
 
 Write-Host "== Configurando autostart ==" -ForegroundColor Cyan
 Write-Host "Venv Pythonw: $VenvPythonw (existe: $(Test-Path $VenvPythonw))"
@@ -21,18 +22,19 @@ $StartupContent = "@echo off`r`nREM System Monitor - fallback Startup (venv)`r`n
 Set-Content -Path $StartupBat -Value $StartupContent -Encoding ASCII
 Write-Host "OK Startup fallback criado: $StartupBat" -ForegroundColor Green
 
-# 2. Dashboard Task (usuario atual, sem admin)
+# 2. Dashboard Task (usuario atual, sem admin) - Flask leve
 Write-Host ""
 Write-Host "-- Dashboard Task (SystemMonitor-Dashboard) --" -ForegroundColor Yellow
 try {
-    $argDash = "-m streamlit run `"$DashboardDir\app.py`" --server.port 8501 --server.headless true"
-    $ActionDash = New-ScheduledTaskAction -Execute $VenvPython -Argument $argDash -WorkingDirectory $DashboardDir
+    $argDash = "--port=8501 --host=0.0.0.0 dashboard_light.app:app"
+    $ActionDash = New-ScheduledTaskAction -Execute $VenvWaitress -Argument $argDash -WorkingDirectory "C:\scripts\system-monitor"
     $TriggerDash = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERNAME"
     $SettingsDash = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit 0
     $PrincipalDash = New-ScheduledTaskPrincipal -UserId "$env:USERNAME" -LogonType Interactive -RunLevel Limited
     Unregister-ScheduledTask -TaskName "SystemMonitor-Dashboard" -Confirm:$false -ErrorAction SilentlyContinue
-    Register-ScheduledTask -TaskName "SystemMonitor-Dashboard" -Action $ActionDash -Trigger $TriggerDash -Settings $SettingsDash -Principal $PrincipalDash -Description "Dashboard Streamlit 8501 - inicia ao logon" | Out-Null
-    Write-Host "OK Dashboard Task criada (AtLogOn $env:USERNAME)" -ForegroundColor Green
+    Unregister-ScheduledTask -TaskName "SystemMonitor-Dashboard-Flask" -Confirm:$false -ErrorAction SilentlyContinue
+    Register-ScheduledTask -TaskName "SystemMonitor-Dashboard" -Action $ActionDash -Trigger $TriggerDash -Settings $SettingsDash -Principal $PrincipalDash -Description "Dashboard Flask leve 8501 - inicia ao logon" | Out-Null
+    Write-Host "OK Dashboard Task criada (Flask AtLogOn $env:USERNAME)" -ForegroundColor Green
     Start-ScheduledTask -TaskName "SystemMonitor-Dashboard" -ErrorAction SilentlyContinue
     Write-Host "Dashboard iniciado em http://localhost:8501" -ForegroundColor Green
 } catch {

@@ -1,6 +1,6 @@
 # System Monitor — Windows → PostgreSQL + Dashboard
 
-Coleta **contínua e máxima** de telemetria do PC Windows (AMD Ryzen 7 5700X + RTX 4060 Ti) e persiste no PostgreSQL local `system_monitor` com histórico permanente. Dashboard Streamlit em `http://localhost:8501`.
+Coleta **contínua e máxima** de telemetria do PC Windows (AMD Ryzen 7 5700X + RTX 4060 Ti) e persiste no PostgreSQL local `system_monitor` com histórico permanente. Dashboard Flask leve em `http://localhost:8501` (~50 MB vs 211 MB Streamlit).
 
 ## Métricas (16 coletores, intervalos configuráveis)
 
@@ -31,10 +31,11 @@ Coleta **contínua e máxima** de telemetria do PC Windows (AMD Ryzen 7 5700X + 
 C:\scripts\system-monitor/
 ├── venv/                     # Python 3.14.5 isolado (não polui sistema)
 ├── collectors/               # 10 módulos (cpu, memory, disk, disk_smart, network, gpu, sensors, processes, connections, services, system)
-├── dashboard/                # Streamlit + Plotly (fragment auto-refresh preserva aba)
-│   ├── app.py                # 9 tabs: Overview/CPU/Memória/GPU/Sensores/Disco/Rede/Processos/Sistema
-│   ├── queries.py            # SQL parametrizado (q_cpu, q_gpu, q_sensors, q_disk_smart, etc)
-│   └── .streamlit/config.toml # headless 8501 dark
+├── dashboard_light/          # Flask + Chart.js leve (~50 MB, waitress)
+│   ├── app.py                # Flask 9 rotas /api/* + / (Chart.js, polling preserva aba)
+│   ├── queries_light.py      # SQL parametrizado sem pandas
+│   ├── templates/index.html  # tabs CSS + Chart.js 4.4 CDN
+│   └── static/app.js/style.css
 ├── sql/
 │   ├── schema.sql            # 14 tabelas + índices + view
 │   ├── disk_extra.sql        # physical_disk + disk_smart
@@ -44,7 +45,7 @@ C:\scripts\system-monitor/
 │   └── retention_task.ps1
 ├── config.py / db.py / monitor.py # loop 1s, batch inserts, heartbeat, failed_batches.jsonl
 ├── .env.example → .env       # DATABASE_URL, INTERVAL_*, ENABLE_RETENTION
-├── requirements.txt + dashboard/requirements_dash.txt
+├── requirements.txt + dashboard_light/requirements_light.txt # Flask/waitress (sem pandas/plotly)
 ├── install_task.ps1 / install_task_elevated.ps1 # Task Scheduler (S4U / SYSTEM Highest)
 ├── setup.ps1                 # bootstrap reproduzível
 └── logs/ (RotatingFileHandler 10MB)
@@ -78,7 +79,7 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-pip install -r dashboard\requirements_dash.txt
+pip install -r dashboard_light\requirements_light.txt
 copy .env.example .env  # ajuste DATABASE_URL
 # DB (requer PGPASSWORD ou pgpass)
 $env:PGPASSWORD="sua_senha"; psql -U postgres -h localhost -d postgres -c "CREATE DATABASE system_monitor OWNER postgres;"
@@ -104,11 +105,11 @@ powershell -ExecutionPolicy Bypass -File .\install_task_elevated.ps1  # SYSTEM H
 # Opção C: usuário (sem admin, 127 sensores)
 powershell -ExecutionPolicy Bypass -File .\install_task.ps1
 
-# 6. Dashboard
-.\venv\Scripts\python.exe -m streamlit run dashboard\app.py --server.port 8501 --server.headless true
+# 6. Dashboard Flask leve (~50 MB)
+.\venv\Scripts\waitress-serve.exe --port=8501 --host=0.0.0.0 dashboard_light.app:app
 # ou Task:
-powershell -ExecutionPolicy Bypass -File .\dashboard\install_dashboard_task.ps1
-# Acesse http://localhost:8501 (auto-refresh fragment preserva aba)
+powershell -ExecutionPolicy Bypass -File .\setup_autostart.ps1  # recria SystemMonitor-Dashboard-Flask
+# Acesse http://localhost:8501 (Chart.js, polling preserva aba, sem pandas/plotly)
 
 # 7. Retenção opcional (desabilitada por padrão)
 # .env ENABLE_RETENTION=true e:
@@ -128,7 +129,7 @@ Get-Content logs\monitor_error.log -Tail 20
 psql -U postgres -h localhost -d system_monitor -c "SELECT * FROM monitor.v_last_heartbeat WHERE success=false;"
 psql -U postgres -h localhost -d system_monitor -c "SELECT device,model,temperature_c,power_on_hours FROM monitor.disk_smart ORDER BY ts DESC LIMIT 4;"
 # dashboard health
-Invoke-WebRequest http://localhost:8501/_stcore/health -UseBasicParsing
+Invoke-WebRequest http://localhost:8501/api/health -UseBasicParsing
 # parar
 Get-Process pythonw | Stop-Process -Force  # ou .\stop_monitor.ps1 (requer Bypass)
 # iniciar
@@ -149,10 +150,10 @@ Get-Process pythonw | Stop-Process -Force  # ou .\stop_monitor.ps1 (requer Bypas
 | `disk_smart` vazio | `smartctl` não no PATH | `C:\Program Files\smartmontools\bin\smartctl.exe` hard-coded, verifique `smartctl --scan` |
 | `psql` timeout | `pgpass.conf` sem `system_monitor` | `localhost:5432:system_monitor:postgres:senha` + `127.0.0.1:5432:*:postgres:senha` |
 | `Task LastTaskResult 1` | `SYSTEM` sem permissão pasta | Use `install_task_elevated.ps1` como admin, ou `Start-Process -Verb RunAs` manual |
-| Dashboard volta à Overview | `meta refresh` antigo | Corrigido `app.py` com `@st.fragment(run_every=interval)` preserva aba |
+| Dashboard volta à Overview | `meta refresh` Streamlit | Trocado por Flask `fetch` + `localStorage` (preserva aba) |
 
 ## Projeto
 
-- **Estrutura** ver `tree` acima. `venv` isolado, `.gitignore` exclui `venv/`, `logs/*.log`, `.env`.
+- **Estrutura** ver `tree` acima. `venv` isolado (~50 MB Flask vs 211 MB Streamlit), `.gitignore` exclui `venv/`, `logs/*.log`, `.env`.
 - **Versionado** com Git (`git log --oneline`). Reprodutível via `setup.ps1` + `.env.example` + `requirements*.txt` + `sql/*.sql`.
 - **Licença** MPL-2.0 (LibreHardwareMonitor) + MIT para código próprio.
