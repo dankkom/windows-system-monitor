@@ -5,7 +5,6 @@ const S = {
   timer: null,
   charts: {},
   mounted: new Set(),
-  abort: null,
 };
 
 const windowTabs = new Set(['overview','cpu','memory','gpu','sensors','disk','net']);
@@ -143,7 +142,6 @@ function unschedule(){ if(S.timer){ clearTimeout(S.timer); S.timer=null; } }
 
 async function updateCurrent(opts={}){
   const tab = S.tab;
-  // não apaga DOM no poll — só atualiza dados
   try{
     if(tab==='overview') await updateOverview(opts);
     else if(tab==='cpu') await updateCpu(opts);
@@ -156,8 +154,8 @@ async function updateCurrent(opts={}){
     else if(tab==='system') await updateSystem(opts);
     els.lastUpdated.textContent = 'atualizado ' + new Date().toLocaleTimeString();
   }catch(e){
+    if(e.name==='AbortError') return;
     console.error(e);
-    // mostra erro discreto sem apagar charts
     const el = document.getElementById('tab-'+tab);
     if(el && !el.querySelector('.err')){
       const d=document.createElement('p'); d.className='err subtle'; d.style.color='#f87171'; d.textContent='erro ao atualizar';
@@ -166,10 +164,8 @@ async function updateCurrent(opts={}){
   }
 }
 
-async function fetchJSON(url){
-  if(S.abort) S.abort.abort();
-  S.abort = new AbortController();
-  const r = await fetch(url, {signal: S.abort.signal, headers:{'Cache-Control':'no-store'}});
+async function fetchJSON(url, opts={}){
+  const r = await fetch(url, {signal: opts.signal, headers:{'Cache-Control':'no-store'}});
   if(!r.ok) throw new Error(url+' '+r.status);
   return r.json();
 }
@@ -181,19 +177,37 @@ async function loadHeader(){
       els.header.innerHTML = `<span><strong>${sys.hostname||''}</strong></span><span class="sep">·</span><span>up ${Math.floor((sys.uptime||0)/3600)}h</span><span class="sep">·</span><span>${sys.ram_gb? sys.ram_gb.toFixed(1)+'GB RAM':''}</span><span class="sep">·</span><span>DB ${db.size}</span>`;
       if(els.footerDb) els.footerDb.textContent = `${db.size} · ${db.cpu_rows} cpu rows · ${db.sensor_rows} sensores`;
     }
-  }catch(e){ /* silencioso */ }
+  }catch(e){
+    if(e.name==='AbortError') return;
+  }
 }
 
 // ---- chart helpers (update diferencial, sem destroy) ----
 function upsertChart(id, labels, datasets, extra={}){
   const canvas = document.getElementById(id);
-  if(!canvas) return;
+  if(!canvas || !canvas.getContext) return;
+  if(typeof Chart==='undefined' || window.chartLoadError){
+    console.warn('Chart.js não carregado');
+    const wrap = canvas.parentElement;
+    if(wrap && !wrap.querySelector('.chart-err')){ wrap.insertAdjacentHTML('beforeend','<p class="subtle chart-err" style="color:#f87171">Chart.js não carregou (verifique CDN)</p>'); }
+    return;
+  }
+  // sem dados — remove chart e mostra subtle
+  if(!labels || !labels.length || !datasets || !datasets.length){
+    if(S.charts[id]){ try{ S.charts[id].destroy(); }catch(_){} delete S.charts[id]; }
+    return;
+  }
+  datasets = datasets.filter(ds=> ds.data && ds.data.length);
+  if(!datasets.length){
+    if(S.charts[id]){ try{ S.charts[id].destroy(); }catch(_){} delete S.charts[id]; }
+    return;
+  }
   const existing = S.charts[id];
   if(existing){
     existing.data.labels = labels;
     existing.data.datasets = datasets;
     Object.assign(existing.options, extra);
-    existing.update('none');
+    try{ existing.update('none'); }catch(e){ console.warn('chart update falhou', id, e); }
     return existing;
   }
   const ctx = canvas.getContext('2d');
