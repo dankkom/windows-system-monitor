@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 
-from spool import BatchSpool
+from monitor_pkg.spool import BatchSpool
 
 
 def new_spool(tmp_path: Path, max_bytes: int) -> BatchSpool:

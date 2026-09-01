@@ -11,21 +11,19 @@ from logging.handlers import RotatingFileHandler
 
 import psycopg
 
-import config
-from db import insert_batch, insert_heartbeat, ensure_schema, replay_pending
+from monitor_pkg import config
+from monitor_pkg.db import insert_batch, insert_heartbeat, ensure_schema, replay_pending
 
 # collectors
-from collectors import cpu as col_cpu
-from collectors import memory as col_mem
-from collectors import disk as col_disk
-from collectors import disk_smart as col_disk_smart
-from collectors import network as col_net
-from collectors import gpu as col_gpu
-from collectors import sensors as col_sensors
-from collectors import processes as col_procs
-from collectors import connections as col_conns
-from collectors import services as col_services
-from collectors import system as col_system
+from collectors import (
+    collect_cpu, collect_memory,
+    collect_disk_io, collect_disk_usage,
+    collect_net_io, collect_net_addrs,
+    collect_gpu, collect_sensors, collect_processes,
+    collect_connections, collect_services,
+    collect_system, collect_eventlog,
+    collect_physical, collect_smart,
+)
 
 # Setup logging
 log = logging.getLogger()
@@ -62,24 +60,22 @@ try:
 except AttributeError:
     pass
 
-# Mapeia coletor -> (função, tabela, intervalo)
-# Alguns coletores têm 2 tabelas (disk, net)
 COLLECTORS = {
-    "cpu":          (lambda h: col_cpu.collect(h), "monitor.cpu", config.INTERVALS["cpu"]),
-    "memory":       (lambda h: col_mem.collect(h), "monitor.memory", config.INTERVALS["memory"]),
-    "disk_io":      (lambda h: col_disk.collect_io(h), "monitor.disk_io", config.INTERVALS["disk_io"]),
-    "disk_usage":   (lambda h: col_disk.collect_usage(h), "monitor.disk_usage", config.INTERVALS["disk_usage"]),
-    "disk_physical": (lambda h: col_disk_smart.collect_physical(h), "monitor.physical_disk", config.INTERVALS["disk_physical"]),
-    "disk_smart":   (lambda h: col_disk_smart.collect_smart(h), "monitor.disk_smart", config.INTERVALS["disk_smart"]),
-    "net_io":       (lambda h: col_net.collect_io(h), "monitor.net_io", config.INTERVALS["network"]),
-    "net_addr":     (lambda h: col_net.collect_addrs(h), "monitor.net_addr", config.INTERVALS["system"]),  # baixa freq
-    "gpu":          (lambda h: col_gpu.collect(h), "monitor.gpu", config.INTERVALS["gpu"]),
-    "sensors":      (lambda h: col_sensors.collect(h), "monitor.sensors", config.INTERVALS["sensors"]),
-    "processes":    (lambda h: col_procs.collect(h, top_n=config.TOP_PROCESSES), "monitor.processes", config.INTERVALS["processes"]),
-    "connections":  (lambda h: col_conns.collect(h), "monitor.connections", config.INTERVALS["connections"]),
-    "services":     (lambda h: col_services.collect(h), "monitor.services", config.INTERVALS["services"]),
-    "system":       (lambda h: col_system.collect(h), "monitor.system_info", config.INTERVALS["system"]),
-    "eventlog":     (lambda h: col_system.collect_eventlog(h), "monitor.eventlog", config.INTERVALS["eventlog"]),
+    "cpu":          (collect_cpu,                                           "monitor.cpu",          config.INTERVALS["cpu"]),
+    "memory":       (collect_memory,                                        "monitor.memory",        config.INTERVALS["memory"]),
+    "disk_io":      (collect_disk_io,                                       "monitor.disk_io",       config.INTERVALS["disk_io"]),
+    "disk_usage":   (collect_disk_usage,                                    "monitor.disk_usage",    config.INTERVALS["disk_usage"]),
+    "disk_physical":(collect_physical,                                      "monitor.physical_disk", config.INTERVALS["disk_physical"]),
+    "disk_smart":   (collect_smart,                                         "monitor.disk_smart",    config.INTERVALS["disk_smart"]),
+    "net_io":       (collect_net_io,                                        "monitor.net_io",        config.INTERVALS["network"]),
+    "net_addr":     (collect_net_addrs,                                     "monitor.net_addr",      config.INTERVALS["system"]),
+    "gpu":          (collect_gpu,                                           "monitor.gpu",           config.INTERVALS["gpu"]),
+    "sensors":      (collect_sensors,                                       "monitor.sensors",       config.INTERVALS["sensors"]),
+    "processes":    (lambda h: collect_processes(h, top_n=config.TOP_PROCESSES), "monitor.processes", config.INTERVALS["processes"]),
+    "connections":  (collect_connections,                                   "monitor.connections",   config.INTERVALS["connections"]),
+    "services":     (collect_services,                                      "monitor.services",      config.INTERVALS["services"]),
+    "system":       (collect_system,                                        "monitor.system_info",   config.INTERVALS["system"]),
+    "eventlog":     (collect_eventlog,                                      "monitor.eventlog",      config.INTERVALS["eventlog"]),
 }
 
 def run_collector(name, func, table, interval_state):

@@ -15,6 +15,9 @@ dependencies = [
   "wmi>=1.5.1; sys_platform == 'win32'",
 ]
 
+[project.scripts]
+monitor = "monitor_pkg.main:main"
+
 [dependency-groups]
 dev = ["pytest>=8,<9", "ruff>=0.9,<1"]
 

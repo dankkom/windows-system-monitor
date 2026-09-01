@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 import psycopg
 
-from config import DATABASE_URL, INTERVALS, SETTINGS
+from monitor_pkg.config import DATABASE_URL, INTERVALS, SETTINGS
 
 
 def get_conn():
@@ -462,3 +462,4 @@ def q_db_size():
         cur.execute(sql)
         r = cur.fetchone()
         return {"size": r[0], "cpu_rows": r[1], "sensor_rows": r[2]}
+

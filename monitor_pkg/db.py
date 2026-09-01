@@ -6,8 +6,8 @@ import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
 
-import config
-from spool import BatchSpool
+from monitor_pkg import config
+from monitor_pkg.spool import BatchSpool
 
 log = logging.getLogger(__name__)
 IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]*$")

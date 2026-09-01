@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -9,11 +8,8 @@ from flask import Flask, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-from config import SETTINGS
-from db import SPOOL, ensure_schema
+from monitor_pkg.config import SETTINGS
+from monitor_pkg.db import SPOOL, ensure_schema
 from . import queries_light as q
 
 HOST = SETTINGS.dashboard_host

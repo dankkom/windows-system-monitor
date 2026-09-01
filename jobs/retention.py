@@ -8,15 +8,11 @@ import sys
 from pathlib import Path
 from datetime import datetime, timezone
 
-# Ensure project root in path
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-
 from dotenv import load_dotenv
-load_dotenv(ROOT / ".env")
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 import psycopg
-from config import DATABASE_URL
+from monitor_pkg.config import DATABASE_URL
 
 ENABLE = os.getenv("ENABLE_RETENTION", "false").lower() in ("1","true","yes","on")
 DRY = "--dry" in sys.argv
