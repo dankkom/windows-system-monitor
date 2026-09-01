@@ -46,7 +46,7 @@ C:\code\windows-system-monitor/
 ├── config.py / db.py / monitor.py # loop, buffer SQLite e heartbeat
 ├── .env.example → .env       # DATABASE_URL, INTERVAL_*, ENABLE_RETENTION
 ├── pyproject.toml + uv.lock   # dependencias travadas; requirements e fallback pip
-├── install_task.ps1 / install_task_elevated.ps1 # Task Scheduler (S4U / SYSTEM Highest)
+├── install_tasks.ps1            # Task Scheduler (SYSTEM Highest - boot automático)
 ├── setup.ps1                 # bootstrap reproduzível
 └── logs/ (RotatingFileHandler 10MB)
 ```
@@ -177,7 +177,7 @@ fonte, fórmula e limitações diretamente na interface.
 | `sensors` só 1 linha `no_sensor` | Não elevado + sem LibreHardwareMonitor | `C:\tools\PawnIO_setup.exe /S` + `RunAs` → 309 sensores |
 | `disk_smart` vazio | `smartctl` não no PATH | `C:\Program Files\smartmontools\bin\smartctl.exe` hard-coded, verifique `smartctl --scan` |
 | `psql` timeout | `pgpass.conf` sem `system_monitor` | `localhost:5432:system_monitor:postgres:senha` + `127.0.0.1:5432:*:postgres:senha` |
-| `Task LastTaskResult 1` | `SYSTEM` sem permissão pasta | Use `install_task_elevated.ps1` como admin, ou `Start-Process -Verb RunAs` manual |
+| `Task LastTaskResult 1` | `SYSTEM` sem permissão pasta | Use `install_tasks.ps1` como admin |
 | Dashboard volta à Overview | `meta refresh` Streamlit | Trocado por Flask `fetch` + `localStorage` (preserva aba) |
 
 ## Projeto

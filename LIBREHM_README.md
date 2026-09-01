@@ -14,7 +14,7 @@
 **Limitação sem admin:** `CPU Temperature Core (Tctl/Tdie)` retorna 0.0 e `Clock Effective` 0.0 porque acesso ao SMU requer driver kernel (PawnIO/WinRing0). Para liberar temps reais e fans da placa-mãe:
 
 1. Execute `C:\tools\PawnIO_setup.exe` como Administrador (instala driver PawnIO 2.2.0)
-2. Rode o monitor elevado: clique direito PowerShell -> Executar como administrador -> `powershell -ExecutionPolicy Bypass -File C:\scripts\system-monitor\install_task_elevated.ps1` (a criar) ou temporariamente `Start-Process python -Verb RunAs -ArgumentList C:\scripts\system-monitor\monitor.py`
+2. Rode o monitor elevado: clique direito PowerShell -> Executar como administrador -> `powershell -ExecutionPolicy Bypass -File C:\scripts\system-monitor\install_tasks.ps1`
 
 **Arquivos salvos:** `PawnIO_setup.exe` (3.2 MB) em `C:\tools\` para instalação futura. Não é obrigatório para operação atual.
 
