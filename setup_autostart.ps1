@@ -8,7 +8,7 @@ $ErrorActionPreference = "Continue"
 $VenvPythonw = "C:\scripts\system-monitor\venv\Scripts\pythonw.exe"
 $VenvPython = "C:\scripts\system-monitor\venv\Scripts\python.exe"
 $MonitorScript = "C:\scripts\system-monitor\monitor.py"
-$DashboardDir = "C:\scripts\system-monitor\dashboard_light"
+$DashboardDir = "C:\scripts\system-monitor\dashboard"
 $VenvWaitress = "C:\scripts\system-monitor\venv\Scripts\waitress-serve.exe"
 
 Write-Host "== Configurando autostart ==" -ForegroundColor Cyan
@@ -26,7 +26,7 @@ Write-Host "OK Startup fallback criado: $StartupBat" -ForegroundColor Green
 Write-Host ""
 Write-Host "-- Dashboard Task (SystemMonitor-Dashboard) --" -ForegroundColor Yellow
 try {
-    $argDash = "--port=8501 --host=0.0.0.0 dashboard_light.app:app"
+    $argDash = "--port=8501 --host=0.0.0.0 dashboard.app:app"
     $ActionDash = New-ScheduledTaskAction -Execute $VenvWaitress -Argument $argDash -WorkingDirectory "C:\scripts\system-monitor"
     $TriggerDash = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERNAME"
     $SettingsDash = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit 0

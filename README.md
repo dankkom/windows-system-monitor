@@ -31,7 +31,7 @@ Coleta **contínua e máxima** de telemetria do PC Windows (AMD Ryzen 7 5700X + 
 C:\scripts\system-monitor/
 ├── venv/                     # Python 3.14.5 isolado (não polui sistema)
 ├── collectors/               # 10 módulos (cpu, memory, disk, disk_smart, network, gpu, sensors, processes, connections, services, system)
-├── dashboard_light/          # Flask + Chart.js leve (~50 MB, waitress)
+├── dashboard/                # Flask + Chart.js leve (~50 MB, waitress)
 │   ├── app.py                # Flask 9 rotas /api/* + / (Chart.js, polling preserva aba)
 │   ├── queries_light.py      # SQL parametrizado sem pandas
 │   ├── templates/index.html  # tabs CSS + Chart.js 4.4 CDN
@@ -45,7 +45,7 @@ C:\scripts\system-monitor/
 │   └── retention_task.ps1
 ├── config.py / db.py / monitor.py # loop 1s, batch inserts, heartbeat, failed_batches.jsonl
 ├── .env.example → .env       # DATABASE_URL, INTERVAL_*, ENABLE_RETENTION
-├── requirements.txt + dashboard_light/requirements_light.txt # Flask/waitress (sem pandas/plotly)
+├── requirements.txt + dashboard/requirements_light.txt # Flask/waitress (sem pandas/plotly)
 ├── install_task.ps1 / install_task_elevated.ps1 # Task Scheduler (S4U / SYSTEM Highest)
 ├── setup.ps1                 # bootstrap reproduzível
 └── logs/ (RotatingFileHandler 10MB)
@@ -79,7 +79,7 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-pip install -r dashboard_light\requirements_light.txt
+pip install -r dashboard\requirements_light.txt
 copy .env.example .env  # ajuste DATABASE_URL
 # DB (requer PGPASSWORD ou pgpass)
 $env:PGPASSWORD="sua_senha"; psql -U postgres -h localhost -d postgres -c "CREATE DATABASE system_monitor OWNER postgres;"
@@ -106,9 +106,9 @@ powershell -ExecutionPolicy Bypass -File .\install_task_elevated.ps1  # SYSTEM H
 powershell -ExecutionPolicy Bypass -File .\install_task.ps1
 
 # 6. Dashboard Flask leve (~50 MB)
-.\venv\Scripts\waitress-serve.exe --port=8501 --host=0.0.0.0 dashboard_light.app:app
+.\venv\Scripts\waitress-serve.exe --port=8501 --host=0.0.0.0 dashboard.app:app
 # ou Task:
-powershell -ExecutionPolicy Bypass -File .\setup_autostart.ps1  # recria SystemMonitor-Dashboard-Flask
+powershell -ExecutionPolicy Bypass -File .\setup_autostart.ps1  # recria SystemMonitor-Dashboard
 # Acesse http://localhost:8501 (Chart.js, polling preserva aba, sem pandas/plotly)
 
 # 7. Retenção opcional (desabilitada por padrão)
