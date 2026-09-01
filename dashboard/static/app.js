@@ -217,11 +217,39 @@ function upsertChart(id, labels, datasets, extra={}){
     options: {
       responsive:true, maintainAspectRatio:false, animation:false,
       interaction:{mode:'index', intersect:false},
-      plugins:{legend:{labels:{color:'#8a94a6', boxWidth:12, font:{size:11}}}, decimation:{enabled:true}},
-      scales:{
-        x:{ticks:{color:'#6b7585', maxTicksLimit:6}, grid:{color:'rgba(255,255,255,.06)'}},
-        y:{ticks:{color:'#6b7585'}, grid:{color:'rgba(255,255,255,.06)'}}
+      plugins:{
+        legend:{labels:{color:'#8a94a6', boxWidth:12, font:{size:11}}},
+        decimation:{enabled:true},
+        tooltip:{callbacks:{title: items=> items[0]?.label || ''}}
       },
+      scales:{
+        x:{
+          ticks:{
+            color:'#6b7585',
+            maxTicksLimit:4,
+            maxRotation:0,
+            autoSkip:true,
+            padding:4,
+            font:{size:10},
+            callback:function(val, idx){
+              const l = this.getLabelForValue(val);
+              if(!l || typeof l!=='string') return l;
+              // labels de tempo são ISO "YYYY-MM-DDTHH:mm:ss" (19), dispositivos são "C:" etc
+              if(!l.includes('T')) return l;
+              // se todos no mesmo dia, mostra só HH:mm
+              const labels = this.chart.data.labels || [];
+              const first = labels[0]?.slice(0,10);
+              const last = labels[labels.length-1]?.slice(0,10);
+              if(first && last && first===last) return l.slice(11,16);
+              // span multi-dias: MM-DD HH:mm
+              return l.slice(5,10) + ' ' + l.slice(11,16);
+            }
+          },
+          grid:{color:'rgba(255,255,255,.06)'}
+        },
+        y:{ticks:{color:'#6b7585', font:{size:10}}, grid:{color:'rgba(255,255,255,.06)'}}
+      },
+      layout:{padding:{bottom:2, left:2, right:4}},
       ...extra
     }
   });
