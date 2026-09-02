@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 import psycopg
-from monitor_pkg.config import DATABASE_URL
+from monitor_pkg.config import require_database_url
 
 ENABLE = os.getenv("ENABLE_RETENTION", "false").lower() in ("1","true","yes","on")
 DRY = "--dry" in sys.argv
@@ -52,7 +52,7 @@ def run():
         print("Retenção DESABILITADA - histórico permanente. Defina ENABLE_RETENTION=true para ativar.")
         return 0
     total_deleted = 0
-    with psycopg.connect(DATABASE_URL) as conn:
+    with psycopg.connect(require_database_url()) as conn:
         with conn.cursor() as cur:
             for table, interval in RETENTION.items():
                 if DRY:

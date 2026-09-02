@@ -7,6 +7,7 @@ from psycopg import sql
 from psycopg.rows import dict_row
 
 from monitor_pkg import config
+from monitor_pkg.config import require_database_url
 from monitor_pkg.spool import BatchSpool
 
 log = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ def _validate(table: str, columns: list[str]) -> tuple[str, str]:
 
 
 def get_conn():
-    return psycopg.connect(config.DATABASE_URL, connect_timeout=config.SETTINGS.connect_timeout, autocommit=True, row_factory=dict_row)
+    return psycopg.connect(require_database_url(), connect_timeout=config.SETTINGS.connect_timeout, autocommit=True, row_factory=dict_row)
 
 
 def _insert_remote(table: str, columns: list[str], rows: list[tuple]) -> int:

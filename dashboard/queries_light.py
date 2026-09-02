@@ -6,11 +6,11 @@ from zoneinfo import ZoneInfo
 
 import psycopg
 
-from monitor_pkg.config import DATABASE_URL, INTERVALS, SETTINGS
+from monitor_pkg.config import INTERVALS, SETTINGS, require_database_url
 
 
 def get_conn():
-    return psycopg.connect(DATABASE_URL, connect_timeout=SETTINGS.connect_timeout)
+    return psycopg.connect(require_database_url(), connect_timeout=SETTINGS.connect_timeout)
 
 
 def _bucket_expr(column: str = "ts") -> str:

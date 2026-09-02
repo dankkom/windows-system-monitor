@@ -48,14 +48,27 @@ class Settings:
     log_level: int
 
 
-def load_settings() -> Settings:
-    database_url = os.getenv("DATABASE_URL", "").strip()
-    if not database_url.startswith(("postgresql://", "postgres://")):
-        raise ValueError("DATABASE_URL must be a PostgreSQL URL")
+def require_database_url() -> str:
+    """Resolves and validates DATABASE_URL, raising a clear error when a DB
+    connection is actually needed (e.g. collector/dashboard runtime)."""
+    url = (os.getenv("DATABASE_URL") or SETTINGS.database_url or "").strip()
+    if not url.startswith(("postgresql://", "postgres://")):
+        raise ValueError(
+            "DATABASE_URL must be a PostgreSQL URL (e.g. postgresql://user:pass@host:5432/db). "
+            "Configure it in .env or the environment."
+        )
     # If password is omitted from URL, psycopg falls back to PGPASSWORD env / pgpass file
-    has_password = database_url.split("@", 1)[0].count(":") >= 2
+    has_password = url.split("@", 1)[0].count(":") >= 2
     if not has_password and not os.getenv("PGPASSWORD"):
         raise ValueError("DATABASE_URL without password requires PGPASSWORD env var or pgpass.conf")
+    return url
+
+
+def load_settings() -> Settings:
+    # Import should not fail when DATABASE_URL is absent (needed for CI/tests that
+    # only consume configuration constants). Validation happens at runtime in
+    # require_database_url() / get_conn().
+    database_url = (os.getenv("DATABASE_URL") or "").strip()
     port = _positive_int("DASHBOARD_PORT", 8501)
     if port > 65535:
         raise ValueError("DASHBOARD_PORT must be <= 65535")
