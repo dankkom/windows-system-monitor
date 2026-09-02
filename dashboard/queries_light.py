@@ -263,12 +263,31 @@ def q_net_latest():
         ]
 
 
+_CPU_HW_TYPES = ("cpu", "processor")
+
+
 def _power_source_priority(name: str) -> int:
+    """Ordena fontes de potência da CPU, a mais baixa é a canônica.
+
+    Reconhece tanto os nomes literais ('CPU Package'/'CPU Platform') quanto o
+    formato composto do LibreHardwareMonitor '<hw_type>:<hw_name>:<sensor>',
+    em que o tipo de hardware vem isolado no primeiro segmento (ex.:
+    'Cpu:AMD Ryzen 7 5700X:Package').
+    """
     normalized = name.casefold()
     if "cpu package" in normalized:
         return 0
     if "cpu platform" in normalized:
         return 1
+    parts = normalized.split(":")
+    if len(parts) >= 2:
+        hardware = parts[0].strip()
+        leaf = parts[-1].strip()
+        if hardware in _CPU_HW_TYPES:
+            if leaf in ("package", "cpu package"):
+                return 0
+            if leaf in ("platform", "platform controller"):
+                return 1
     return 99
 
 
