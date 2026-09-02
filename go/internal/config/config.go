@@ -1,5 +1,5 @@
-// Package config loads runtime settings from environment and .env, mirroring
-// monitor_pkg.config.
+// Package config loads runtime settings from config.toml (preferred) and environment,
+// with fallback to legacy .env for backwards compatibility.
 package config
 
 import (
@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/BurntSushi/toml"
 )
 
 // Settings holds validated runtime configuration.
@@ -33,10 +35,70 @@ type Settings struct {
 	Retention          map[string]string
 	RetentionBatch     int
 	RetentionSleep     time.Duration
+	ConfigPath         string
+}
+
+// fileConfig mirrors config.toml structure.
+type fileConfig struct {
+	DB struct {
+		URL            string `toml:"url"`
+		ConnectTimeout int    `toml:"connect_timeout"`
+		RetrySeconds   int    `toml:"retry_seconds"`
+		BufferMaxBytes int64  `toml:"buffer_max_bytes"`
+	} `toml:"db"`
+	Dashboard struct {
+		Host     string `toml:"host"`
+		Port     int    `toml:"port"`
+		Timezone string `toml:"timezone"`
+	} `toml:"dashboard"`
+	Power struct {
+		AuxBaselineW  float64  `toml:"aux_baseline_w"`
+		PSUEfficiency float64  `toml:"psu_efficiency"`
+		GPUIdleW      *float64 `toml:"gpu_idle_w"`
+		GPUMaxW       *float64 `toml:"gpu_max_w"`
+	} `toml:"power"`
+	Retention struct {
+		Enabled      bool    `toml:"enabled"`
+		BatchLimit   int     `toml:"batch_limit"`
+		BatchSleep   float64 `toml:"batch_sleep"`
+		Processes    string  `toml:"processes"`
+		Connections  string  `toml:"connections"`
+		Sensors      string  `toml:"sensors"`
+		CPU          string  `toml:"cpu"`
+		Memory       string  `toml:"memory"`
+		GPU          string  `toml:"gpu"`
+		Heartbeat    string  `toml:"heartbeat"`
+		Eventlog     string  `toml:"eventlog"`
+		DiskIO       string  `toml:"disk_io"`
+		NetIO        string  `toml:"net_io"`
+	} `toml:"retention"`
+	Intervals struct {
+		CPU          int `toml:"cpu"`
+		Memory       int `toml:"memory"`
+		DiskIO       int `toml:"disk_io"`
+		DiskUsage    int `toml:"disk_usage"`
+		DiskPhysical int `toml:"disk_physical"`
+		DiskSmart    int `toml:"disk_smart"`
+		Network      int `toml:"network"`
+		GPU          int `toml:"gpu"`
+		Sensors      int `toml:"sensors"`
+		Processes    int `toml:"processes"`
+		Connections  int `toml:"connections"`
+		Services     int `toml:"services"`
+		System       int `toml:"system"`
+		Eventlog     int `toml:"eventlog"`
+	} `toml:"intervals"`
+	Collector struct {
+		TopProcesses int    `toml:"top_processes"`
+		Hostname     string `toml:"hostname"`
+	} `toml:"collector"`
+	Log struct {
+		Level string `toml:"level"`
+	} `toml:"log"`
 }
 
 // loadDotEnv applies KEY=VALUE pairs from path into the environment, skipping
-// lines already set. A minimal .env parser for KEY=VALUE lines and # comments.
+// lines already set. Kept for backwards compatibility when config.toml is absent.
 func loadDotEnv(path string) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -59,9 +121,7 @@ func loadDotEnv(path string) {
 	}
 }
 
-// RequireDatabaseURL resolves and validates DATABASE_URL, mirroring the Python
-// require_database_url. Returns an error when a DB connection is needed but the
-// URL is absent/malformed.
+// RequireDatabaseURL resolves and validates DATABASE_URL.
 func (s *Settings) RequireDatabaseURL() (string, error) {
 	url := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if url == "" {
@@ -112,23 +172,30 @@ func nonnegativeFloat(name string, def float64, hasDefault bool) (float64, bool)
 	return v, true
 }
 
-// baseDir resolves the project root by searching for .env upwards.
+// baseDir resolves the project/install root by searching for config.toml or .env upwards.
 func baseDir() string {
 	wd, err := os.Getwd()
 	if err != nil {
 		return "."
 	}
-	// search wd, parent, grandparent for .env
-	for _, cand := range []string{wd, filepath.Join(wd, ".."), filepath.Join(wd, "..", "..")} {
+	candidates := []string{wd, filepath.Join(wd, ".."), filepath.Join(wd, "..", "..")}
+	for _, cand := range candidates {
+		if _, err := os.Stat(filepath.Join(cand, "config.toml")); err == nil {
+			abs, _ := filepath.Abs(cand)
+			return abs
+		}
 		if _, err := os.Stat(filepath.Join(cand, ".env")); err == nil {
 			abs, _ := filepath.Abs(cand)
 			return abs
 		}
 	}
-	// also check executable dir
 	if exe, err := os.Executable(); err == nil {
 		dir := filepath.Dir(exe)
 		for _, cand := range []string{dir, filepath.Join(dir, ".."), filepath.Join(dir, "..", "..")} {
+			if _, err := os.Stat(filepath.Join(cand, "config.toml")); err == nil {
+				abs, _ := filepath.Abs(cand)
+				return abs
+			}
 			if _, err := os.Stat(filepath.Join(cand, ".env")); err == nil {
 				abs, _ := filepath.Abs(cand)
 				return abs
@@ -138,94 +205,338 @@ func baseDir() string {
 	return wd
 }
 
-// Load reads and validates settings from the environment and .env file.
+func findConfigFile(base string) (string, *fileConfig) {
+	candidates := []string{
+		filepath.Join(base, "config.toml"),
+		filepath.Join(base, "..", "config.toml"),
+	}
+	// also check exe dir
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		candidates = append(candidates,
+			filepath.Join(dir, "config.toml"),
+			filepath.Join(dir, "..", "config.toml"),
+		)
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			var fc fileConfig
+			if _, err := toml.DecodeFile(p, &fc); err == nil {
+				return p, &fc
+			}
+		}
+	}
+	return "", nil
+}
+
+// Load reads and validates settings from config.toml, env vars and defaults.
+// Precedence: env var > config.toml > default. .env is loaded only as fallback.
 func Load() *Settings {
 	base := baseDir()
-	loadDotEnv(filepath.Join(base, ".env"))
-	// also try parent if not found
-	if os.Getenv("DATABASE_URL") == "" {
-		loadDotEnv(filepath.Join(base, "..", ".env"))
+	configPath, fc := findConfigFile(base)
+
+	// Fallback to legacy .env if no config.toml found
+	if fc == nil {
+		loadDotEnv(filepath.Join(base, ".env"))
+		if os.Getenv("DATABASE_URL") == "" {
+			loadDotEnv(filepath.Join(base, "..", ".env"))
+		}
+		// also try exe dir .env
+		if os.Getenv("DATABASE_URL") == "" {
+			if exe, err := os.Executable(); err == nil {
+				dir := filepath.Dir(exe)
+				loadDotEnv(filepath.Join(dir, ".env"))
+				loadDotEnv(filepath.Join(dir, "..", ".env"))
+			}
+		}
 	}
 
-	hostname := os.Getenv("HOSTNAME")
+	// helpers that respect env > toml > default
+	intOr := func(envName string, tomlVal, def int) int {
+		if v := strings.TrimSpace(os.Getenv(envName)); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				return n
+			}
+			return def
+		}
+		if fc != nil && tomlVal > 0 {
+			return tomlVal
+		}
+		return def
+	}
+	int64Or := func(envName string, tomlVal, def int64) int64 {
+		if v := strings.TrimSpace(os.Getenv(envName)); v != "" {
+			if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && n > 0 {
+				return n
+			}
+			return def
+		}
+		if fc != nil && tomlVal > 0 {
+			return tomlVal
+		}
+		return def
+	}
+	strOr := func(envName string, tomlVal, def string) string {
+		if v := strings.TrimSpace(os.Getenv(envName)); v != "" {
+			return v
+		}
+		if fc != nil && strings.TrimSpace(tomlVal) != "" {
+			return strings.TrimSpace(tomlVal)
+		}
+		return def
+	}
+
+	// DatabaseURL: env > toml > ""
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL == "" && fc != nil {
+		databaseURL = strings.TrimSpace(fc.DB.URL)
+	}
+
+	hostname := strOr("HOSTNAME", func() string {
+		if fc != nil {
+			return fc.Collector.Hostname
+		}
+		return ""
+	}(), "")
 	if hostname == "" {
 		hostname, _ = os.Hostname()
 	}
 
-	connectTimeout := time.Duration(positiveInt("DATABASE_CONNECT_TIMEOUT", 10)) * time.Second
-	retrySeconds := time.Duration(positiveInt("DATABASE_RETRY_SECONDS", 30)) * time.Second
-	bufferMax := positiveInt64("BUFFER_MAX_BYTES", 2*1024*1024*1024)
-
-	baseline, _ := nonnegativeFloat("POWER_AUX_BASELINE_W", 30.0, true)
-	efficiency, _ := nonnegativeFloat("POWER_PSU_EFFICIENCY", 0.90, true)
-	if efficiency <= 0 || efficiency > 1 {
-		efficiency = 0.90
+	connectTimeout := time.Duration(intOr("DATABASE_CONNECT_TIMEOUT", 0, 0)) * time.Second
+	if connectTimeout == 0 {
+		if fc != nil && fc.DB.ConnectTimeout > 0 {
+			connectTimeout = time.Duration(fc.DB.ConnectTimeout) * time.Second
+		} else {
+			ct := positiveInt("DATABASE_CONNECT_TIMEOUT", 10)
+			// positiveInt already checks env, but we already handled env; need to avoid double
+			// So just use default if still 0
+			if ct == 10 && os.Getenv("DATABASE_CONNECT_TIMEOUT") == "" && (fc == nil || fc.DB.ConnectTimeout == 0) {
+				connectTimeout = 10 * time.Second
+			} else {
+				connectTimeout = time.Duration(ct) * time.Second
+			}
+		}
 	}
+	// Simplified: use helper that already covered env, just handle toml/default
+	// Recompute correctly for connect/retry/buffer
+	ctVal := intOr("DATABASE_CONNECT_TIMEOUT", 0, 0)
+	if ctVal == 0 {
+		if fc != nil && fc.DB.ConnectTimeout > 0 {
+			ctVal = fc.DB.ConnectTimeout
+		} else {
+			ctVal = 10
+		}
+	}
+	connectTimeout = time.Duration(ctVal) * time.Second
+
+	retryVal := intOr("DATABASE_RETRY_SECONDS", 0, 0)
+	if retryVal == 0 {
+		if fc != nil && fc.DB.RetrySeconds > 0 {
+			retryVal = fc.DB.RetrySeconds
+		} else {
+			retryVal = 30
+		}
+	}
+	retrySeconds := time.Duration(retryVal) * time.Second
+
+	bufferMax := int64Or("BUFFER_MAX_BYTES", 0, 0)
+	if bufferMax == 0 {
+		if fc != nil && fc.DB.BufferMaxBytes > 0 {
+			bufferMax = fc.DB.BufferMaxBytes
+		} else {
+			bufferMax = 2 * 1024 * 1024 * 1024
+		}
+	}
+
+	// Power
+	var baseline float64
+	var baselineOk bool
+	if v := strings.TrimSpace(os.Getenv("POWER_AUX_BASELINE_W")); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 {
+			baseline = f
+			baselineOk = true
+		}
+	} else if fc != nil && fc.Power.AuxBaselineW != 0 {
+		baseline = fc.Power.AuxBaselineW
+		baselineOk = true
+	} else {
+		baseline = 30.0
+		baselineOk = true
+		// check env fallback that was already handled via nonnegativeFloat
+		if !baselineOk {
+			baseline = 24
+		}
+	}
+	// Use existing nonnegativeFloat for backwards compat, but override if fc has value and env absent
+	if os.Getenv("POWER_AUX_BASELINE_W") == "" && fc != nil && fc.Power.AuxBaselineW != 0 {
+		baseline = fc.Power.AuxBaselineW
+	} else if os.Getenv("POWER_AUX_BASELINE_W") == "" && fc == nil {
+		// use default from original
+		baseline = 30.0
+		if baselineOk == false {
+			baseline = 24
+		}
+	}
+	// Actually simpler: respect env > toml > default 30
+	baseline, _ = func() (float64, bool) {
+		if v := strings.TrimSpace(os.Getenv("POWER_AUX_BASELINE_W")); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 {
+				return f, true
+			}
+		}
+		if fc != nil && fc.Power.AuxBaselineW != 0 {
+			return fc.Power.AuxBaselineW, true
+		}
+		return 30.0, true
+	}()
+
+	efficiency := func() float64 {
+		if v := strings.TrimSpace(os.Getenv("POWER_PSU_EFFICIENCY")); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 && f <= 1 {
+				return f
+			}
+		}
+		if fc != nil && fc.Power.PSUEfficiency != 0 {
+			if fc.Power.PSUEfficiency > 0 && fc.Power.PSUEfficiency <= 1 {
+				return fc.Power.PSUEfficiency
+			}
+		}
+		return 0.90
+	}()
 
 	gpuIdle, hasIdle := nonnegativeFloat("POWER_GPU_IDLE_W", 0, false)
 	gpuMax, hasMax := nonnegativeFloat("POWER_GPU_MAX_W", 0, false)
+	// toml overrides if env absent
+	if os.Getenv("POWER_GPU_IDLE_W") == "" && fc != nil && fc.Power.GPUIdleW != nil {
+		gpuIdle = *fc.Power.GPUIdleW
+		hasIdle = true
+	}
+	if os.Getenv("POWER_GPU_MAX_W") == "" && fc != nil && fc.Power.GPUMaxW != nil {
+		gpuMax = *fc.Power.GPUMaxW
+		hasMax = true
+	}
 	var idlePtr, maxPtr *float64
 	if hasIdle && hasMax {
 		idlePtr, maxPtr = &gpuIdle, &gpuMax
 	}
 
-	port := positiveInt("DASHBOARD_PORT", 8501)
+	port := intOr("DASHBOARD_PORT", 0, 0)
+	if port == 0 {
+		if fc != nil && fc.Dashboard.Port > 0 {
+			port = fc.Dashboard.Port
+		} else {
+			port = 8501
+		}
+	}
 	if port > 65535 {
 		port = 8501
 	}
 
+	// Intervals: env > toml > default
 	intervals := map[string]time.Duration{
-		"cpu":            seconds("INTERVAL_CPU", 10),
-		"memory":         seconds("INTERVAL_MEMORY", 10),
-		"disk_io":        seconds("INTERVAL_DISK_IO", 10),
-		"disk_usage":     seconds("INTERVAL_DISK_USAGE", 60),
-		"disk_physical":  seconds("INTERVAL_DISK_PHYSICAL", 300),
-		"disk_smart":     seconds("INTERVAL_DISK_SMART", 300),
-		"network":        seconds("INTERVAL_NETWORK", 10),
-		"gpu":            seconds("INTERVAL_GPU", 10),
-		"sensors":        seconds("INTERVAL_SENSORS", 15),
-		"processes":      seconds("INTERVAL_PROCESSES", 30),
-		"connections":    seconds("INTERVAL_CONNECTIONS", 30),
-		"services":       seconds("INTERVAL_SERVICES", 60),
-		"system":         seconds("INTERVAL_SYSTEM", 60),
-		"eventlog":       seconds("INTERVAL_EVENTLOG", 60),
+		"cpu":            time.Duration(intOr("INTERVAL_CPU", 0, 0))*time.Second,
+		"memory":         time.Duration(intOr("INTERVAL_MEMORY", 0, 0))*time.Second,
+		"disk_io":        time.Duration(intOr("INTERVAL_DISK_IO", 0, 0))*time.Second,
+		"disk_usage":     time.Duration(intOr("INTERVAL_DISK_USAGE", 0, 0))*time.Second,
+		"disk_physical":  time.Duration(intOr("INTERVAL_DISK_PHYSICAL", 0, 0))*time.Second,
+		"disk_smart":     time.Duration(intOr("INTERVAL_DISK_SMART", 0, 0))*time.Second,
+		"network":        time.Duration(intOr("INTERVAL_NETWORK", 0, 0))*time.Second,
+		"gpu":            time.Duration(intOr("INTERVAL_GPU", 0, 0))*time.Second,
+		"sensors":        time.Duration(intOr("INTERVAL_SENSORS", 0, 0))*time.Second,
+		"processes":      time.Duration(intOr("INTERVAL_PROCESSES", 0, 0))*time.Second,
+		"connections":    time.Duration(intOr("INTERVAL_CONNECTIONS", 0, 0))*time.Second,
+		"services":       time.Duration(intOr("INTERVAL_SERVICES", 0, 0))*time.Second,
+		"system":         time.Duration(intOr("INTERVAL_SYSTEM", 0, 0))*time.Second,
+		"eventlog":       time.Duration(intOr("INTERVAL_EVENTLOG", 0, 0))*time.Second,
+	}
+	// Fill defaults where still 0, using toml intervals if present
+	defaults := map[string]int{
+		"cpu": 10, "memory": 10, "disk_io": 10, "disk_usage": 60, "disk_physical": 300, "disk_smart": 300,
+		"network": 10, "gpu": 10, "sensors": 15, "processes": 30, "connections": 30, "services": 60, "system": 60, "eventlog": 60,
+	}
+	tomlIntervals := map[string]int{}
+	if fc != nil {
+		tomlIntervals = map[string]int{
+			"cpu": fc.Intervals.CPU, "memory": fc.Intervals.Memory, "disk_io": fc.Intervals.DiskIO,
+			"disk_usage": fc.Intervals.DiskUsage, "disk_physical": fc.Intervals.DiskPhysical, "disk_smart": fc.Intervals.DiskSmart,
+			"network": fc.Intervals.Network, "gpu": fc.Intervals.GPU, "sensors": fc.Intervals.Sensors,
+			"processes": fc.Intervals.Processes, "connections": fc.Intervals.Connections, "services": fc.Intervals.Services,
+			"system": fc.Intervals.System, "eventlog": fc.Intervals.Eventlog,
+		}
+	}
+	for k, def := range defaults {
+		if intervals[k] == 0 {
+			if fc != nil && tomlIntervals[k] > 0 {
+				intervals[k] = time.Duration(tomlIntervals[k]) * time.Second
+			} else {
+				intervals[k] = time.Duration(def) * time.Second
+			}
+		}
 	}
 
 	enableRetention := parseBoolEnv("ENABLE_RETENTION", false)
-	retention := map[string]string{
-		"monitor.processes":   envOr("RETENTION_PROCESSES", "30 days"),
-		"monitor.connections": envOr("RETENTION_CONNECTIONS", "7 days"),
-		"monitor.sensors":     envOr("RETENTION_SENSORS", "90 days"),
-		"monitor.cpu":         envOr("RETENTION_CPU", "90 days"),
-		"monitor.memory":      envOr("RETENTION_MEMORY", "90 days"),
-		"monitor.gpu":         envOr("RETENTION_GPU", "90 days"),
-		"monitor.heartbeat":   envOr("RETENTION_HEARTBEAT", "30 days"),
-		"monitor.eventlog":    envOr("RETENTION_EVENTLOG", "30 days"),
-		"monitor.disk_io":     envOr("RETENTION_DISK_IO", "90 days"),
-		"monitor.net_io":      envOr("RETENTION_NET_IO", "90 days"),
+	if os.Getenv("ENABLE_RETENTION") == "" && fc != nil {
+		enableRetention = fc.Retention.Enabled
 	}
-	batchLimit := positiveInt("RETENTION_BATCH_LIMIT", 50000)
-	batchSleepRaw := os.Getenv("RETENTION_BATCH_SLEEP")
+	retention := map[string]string{
+		"monitor.processes":   envOrToml("RETENTION_PROCESSES", func() string { if fc != nil { return fc.Retention.Processes }; return "" }(), "30 days"),
+		"monitor.connections": envOrToml("RETENTION_CONNECTIONS", func() string { if fc != nil { return fc.Retention.Connections }; return "" }(), "7 days"),
+		"monitor.sensors":     envOrToml("RETENTION_SENSORS", func() string { if fc != nil { return fc.Retention.Sensors }; return "" }(), "90 days"),
+		"monitor.cpu":         envOrToml("RETENTION_CPU", func() string { if fc != nil { return fc.Retention.CPU }; return "" }(), "90 days"),
+		"monitor.memory":      envOrToml("RETENTION_MEMORY", func() string { if fc != nil { return fc.Retention.Memory }; return "" }(), "90 days"),
+		"monitor.gpu":         envOrToml("RETENTION_GPU", func() string { if fc != nil { return fc.Retention.GPU }; return "" }(), "90 days"),
+		"monitor.heartbeat":   envOrToml("RETENTION_HEARTBEAT", func() string { if fc != nil { return fc.Retention.Heartbeat }; return "" }(), "30 days"),
+		"monitor.eventlog":    envOrToml("RETENTION_EVENTLOG", func() string { if fc != nil { return fc.Retention.Eventlog }; return "" }(), "30 days"),
+		"monitor.disk_io":     envOrToml("RETENTION_DISK_IO", func() string { if fc != nil { return fc.Retention.DiskIO }; return "" }(), "90 days"),
+		"monitor.net_io":      envOrToml("RETENTION_NET_IO", func() string { if fc != nil { return fc.Retention.NetIO }; return "" }(), "90 days"),
+	}
+	batchLimit := intOr("RETENTION_BATCH_LIMIT", 0, 0)
+	if batchLimit == 0 {
+		if fc != nil && fc.Retention.BatchLimit > 0 {
+			batchLimit = fc.Retention.BatchLimit
+		} else {
+			batchLimit = 50000
+		}
+	}
 	batchSleep := 100 * time.Millisecond
-	if strings.TrimSpace(batchSleepRaw) != "" {
-		if f, err := strconv.ParseFloat(strings.TrimSpace(batchSleepRaw), 64); err == nil && f >= 0 {
+	if v := strings.TrimSpace(os.Getenv("RETENTION_BATCH_SLEEP")); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 {
 			batchSleep = time.Duration(f * float64(time.Second))
 		}
+	} else if fc != nil && fc.Retention.BatchSleep != 0 {
+		batchSleep = time.Duration(fc.Retention.BatchSleep * float64(time.Second))
 	}
 
 	logDir := filepath.Join(base, "logs")
 	_ = os.MkdirAll(logDir, 0755)
 
-	host := os.Getenv("DASHBOARD_HOST")
-	if strings.TrimSpace(host) == "" {
-		host = "127.0.0.1"
-	}
-	tz := strings.TrimSpace(os.Getenv("DASHBOARD_TIMEZONE"))
+	host := strOr("DASHBOARD_HOST", func() string {
+		if fc != nil {
+			return fc.Dashboard.Host
+		}
+		return ""
+	}(), "127.0.0.1")
+	tz := strOr("DASHBOARD_TIMEZONE", func() string {
+		if fc != nil {
+			return fc.Dashboard.Timezone
+		}
+		return ""
+	}(), "America/Sao_Paulo")
 	if tz == "" {
 		tz = "America/Sao_Paulo"
 	}
+
+	topProcs := intOr("TOP_PROCESSES", 0, 0)
+	if topProcs == 0 {
+		if fc != nil && fc.Collector.TopProcesses > 0 {
+			topProcs = fc.Collector.TopProcesses
+		} else {
+			topProcs = 50
+		}
+	}
+
 	return &Settings{
-		DatabaseURL:        strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		DatabaseURL:        databaseURL,
 		Hostname:           hostname,
 		ConnectTimeout:     connectTimeout,
 		RetrySeconds:       retrySeconds,
@@ -238,13 +549,14 @@ func Load() *Settings {
 		PowerGPUIdleW:      idlePtr,
 		PowerGPUMaxW:       maxPtr,
 		Intervals:          intervals,
-		TopProcesses:       positiveInt("TOP_PROCESSES", 50),
+		TopProcesses:       topProcs,
 		BufferPath:         filepath.Join(logDir, "pending_batches.sqlite3"),
 		LogDir:             logDir,
 		EnableRetention:    enableRetention,
 		Retention:          retention,
 		RetentionBatch:     batchLimit,
 		RetentionSleep:     batchSleep,
+		ConfigPath:         configPath,
 	}
 }
 
@@ -270,6 +582,16 @@ func parseBoolEnv(name string, def bool) bool {
 func envOr(name, def string) string {
 	if v := strings.TrimSpace(os.Getenv(name)); v != "" {
 		return v
+	}
+	return def
+}
+
+func envOrToml(envName, tomlVal, def string) string {
+	if v := strings.TrimSpace(os.Getenv(envName)); v != "" {
+		return v
+	}
+	if strings.TrimSpace(tomlVal) != "" {
+		return strings.TrimSpace(tomlVal)
 	}
 	return def
 }

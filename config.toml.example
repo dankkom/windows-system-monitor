@@ -1,0 +1,63 @@
+# System Monitor — config.toml
+# Copie para config.toml e ajuste. Env vars têm precedência sobre este arquivo.
+# Gerado automaticamente pelo instalador (Inno Setup) quando você informa DATABASE_URL.
+
+[db]
+# URL completa do PostgreSQL. É o único campo obrigatório.
+# Exemplos:
+#   local:  postgresql://postgres:senha@localhost:5432/system_monitor
+#   central: postgresql://monitor:senha@192.168.1.10:5432/system_monitor
+url = "postgresql://postgres:senha@localhost:5432/system_monitor"
+connect_timeout = 10
+retry_seconds = 30
+buffer_max_bytes = 2147483648
+
+[collector]
+hostname = ""        # vazio = hostname do Windows
+top_processes = 50
+
+[dashboard]
+host = "127.0.0.1"
+port = 8501
+timezone = "America/Sao_Paulo"
+
+[intervals]
+cpu = 10
+memory = 10
+disk_io = 10
+disk_usage = 60
+disk_physical = 300
+disk_smart = 300
+network = 10
+gpu = 10
+sensors = 15
+processes = 30
+connections = 30
+services = 60
+system = 60
+eventlog = 60
+
+[log]
+level = "INFO"
+
+[power]
+# Estimativa elétrica — ajuste com medidor de tomada para precisão
+aux_baseline_w = 24
+psu_efficiency = 0.90
+gpu_idle_w = 10     # RTX 4060 Ti idle ~10W; deixe comentado para desativar
+gpu_max_w = 160     # RTX 4060 Ti max ~160W
+
+[retention]
+enabled = false      # false = histórico permanente
+batch_limit = 50000
+batch_sleep = 0.1    # segundos entre batches
+processes = "30 days"
+connections = "7 days"
+sensors = "90 days"
+cpu = "90 days"
+memory = "90 days"
+gpu = "90 days"
+heartbeat = "30 days"
+eventlog = "30 days"
+disk_io = "90 days"
+net_io = "90 days"

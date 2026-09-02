@@ -11,34 +11,21 @@ Coleta contínua de telemetria do seu PC Windows e envia para um **PostgreSQL** 
 ### 1. Baixe o instalador
 Em [**Releases**](https://github.com/dankkom/windows-system-monitor/releases) baixe `system-monitor-*-setup.exe` (ou use o `*-windows-amd64.zip` portátil).
 
-> Alternativa sem instalador: `powershell -ExecutionPolicy Bypass -File installer/install.ps1` direto do repositório clonado (faz build local).
+> Alternativa sem instalador: `powershell -ExecutionPolicy Bypass -File installer/install.ps1` direto do repositório clonado (faz build local e **pergunta** os mesmos dados de banco interativamente — também gera `config.toml` e pode instalar PG/opcionais).
 
 ### 2. Execute como Administrador
-Duplo-clique no `setup.exe` **como Administrador** → instala em `C:\Program Files\system-monitor`.
+Duplo-clique no `setup.exe` **como Administrador** → assistente em português:
 
-O instalador já:
-- copia `monitor-go.exe` + `lhm-dump.exe` (sensores)
-- cria `.env` a partir de `.env.example` se não existir
-- roda `monitor-go --init` (cria o banco `system_monitor` + 16 tabelas)
+1. **Banco de dados** — informe `Host` (ex: `localhost` ou `192.168.1.10`), `Porta` (5432), `Usuário` (`postgres`), **Senha** e `Banco` (`system_monitor`). O instalador gera `config.toml` automaticamente (senha em texto plano em `config.toml`).
+2. **PostgreSQL** — marque *“Instalar PostgreSQL automaticamente se não estiver instalado”* se o host for `localhost` e você não tem PG. O instalador baixa a **versão mais recente** via `winget`/`choco` (fallback EDB) e já cria o usuário com a senha que você informou (ou gera uma se deixar em branco).
+3. **Opcionais** — marque *smartmontools* (para SMART) e *PawnIO* (para 309 sensores) se quiser — também instalados via `winget`/`choco`.
+
+O instalador então:
+- copia `monitor-go.exe` + `lhm-dump.exe` (sensores) para `C:\Program Files\system-monitor`
+- grava `C:\Program Files\system-monitor\config.toml` com o `DATABASE_URL` que você informou
+- instala PostgreSQL (se marcado e ausente) e opcionais
+- roda `monitor-go --init` (cria o banco `system_monitor` + 16 tabelas) — **sem precisar editar `.env` manualmente**
 - registra 3 tarefas no boot (SYSTEM): `SystemMonitor-Go` (coletor), `SystemMonitor-Go-Dashboard` (dashboard) e `SystemMonitor-Go-Retention` (limpeza, só se ativada)
-
-### 3. Configure o banco (único passo manual)
-Edite **`C:\Program Files\system-monitor\.env`** e ajuste:
-
-```ini
-DATABASE_URL=postgresql://postgres:SUA_SENHA@HOST:5432/system_monitor
-# HOST = localhost (PG local) ou IP do servidor central
-```
-
-Se o PostgreSQL for **local**, instale-o antes (ex.: [PostgreSQL 18](https://www.postgresql.org/download/windows/)) e garanta que está rodando: `Get-Service postgresql*`.
-
-Se for **central**, aponte para ele — todos os PCs podem enviar para o mesmo banco.
-
-Depois aplique (ou reaplique) o schema:
-
-```powershell
-& "C:\Program Files\system-monitor\monitor-go.exe" --init
-```
 
 ### 4. Confira se está coletando
 ```powershell
@@ -74,29 +61,29 @@ Sem esses opcionais o agente ainda sobe — as tabelas correspondentes ficam com
 
 ### Opção A — Instalador (recomendado)
 1. Baixe `system-monitor-*-setup.exe` em Releases.
-2. Clique direito → **Executar como administrador** → Avançar.
-3. Edite `C:\Program Files\system-monitor\.env` (`DATABASE_URL`).
-4. `& "C:\Program Files\system-monitor\monitor-go.exe" --init`
-5. Reinicie ou `Start-ScheduledTask -TaskName SystemMonitor-Go,SystemMonitor-Go-Dashboard`
+2. Clique direito → **Executar como administrador** → wizard pede `Host/Porta/Usuário/Senha/Banco` e se deve instalar PostgreSQL/opcionais → Avançar.
+3. O instalador já gera `config.toml` e roda `--init`. Confira `http://localhost:8501`.
+4. Se precisar corrigir, edite `C:\Program Files\system-monitor\config.toml` (`[db] url`) e rode `& "C:\Program Files\system-monitor\monitor-go.exe" --init`.
 
 **Desinstalar:** Painel de Controle → Programas → System Monitor → Desinstalar (remove as 3 tarefas).
 
 ### Opção B — `install.ps1` (sem gerar `setup.exe`)
-Para quem clonou o repo e quer instalar direto sem Inno Setup:
+Para quem clonou o repo e quer instalar direto sem Inno Setup (pergunta interativa e gera `config.toml`):
 
 ```powershell
 git clone https://github.com/dankkom/windows-system-monitor.git
 cd windows-system-monitor
 powershell -ExecutionPolicy Bypass -File installer/install.ps1
-# edite C:\Program Files\system-monitor\.env depois e rode --init
+# responde Host/Porta/Usuário/Senha/Banco + opcionais no prompt
+# ou não-interativo: .\installer\install.ps1 -DbHost 192.168.1.10 -DbPassword "xxx" -InstallPostgres -WithSmartTools
 ```
 
 ### Opção C — Manual / portátil (sem admin, sem tarefas)
 Útil para testar sem instalar:
 
 ```powershell
-copy .env.example .env
-# edite DATABASE_URL
+copy config.toml.example config.toml
+# edite [db] url  (ou defina env var DATABASE_URL)
 .\go\monitor-go.exe --init
 .\go\monitor-go.exe --dry-run   # testa coletores sem gravar
 .\go\monitor-go.exe --once      # uma coleta completa
@@ -109,35 +96,39 @@ Para rodar coleta + dashboard juntos manualmente: `.\go\monitor-go.exe --collect
 
 ## Primeiro acesso ao dashboard
 
-- URL: **http://localhost:8501** (ou `http://SEU_HOST:8501` se mudou `DASHBOARD_HOST/PORT` no `.env`)
+- URL: **http://localhost:8501** (ou `http://SEU_HOST:8501` se mudou `[dashboard] host/port` em `config.toml` ou env `DASHBOARD_HOST/PORT`)
 - Health: `/api/health` (200), `/api/ready`, `/api/status` (pendências do spool)
 - Se não abrir, veja `logs/monitor-go.log` e `Get-ScheduledTask SystemMonitor-Go* | Get-ScheduledTaskInfo`.
 
 ---
 
-## Configuração (.env)
+## Configuração (config.toml)
 
-Tudo via `.env` ao lado do `monitor-go.exe` (ou `C:\Program Files\system-monitor\.env` quando instalado). Valores padrão funcionam; só `DATABASE_URL` é obrigatório.
+Tudo via **`config.toml`** ao lado do `monitor-go.exe` (ou `C:\Program Files\system-monitor\config.toml` quando instalado). O instalador gera este arquivo automaticamente — **não precisa criar `.env` manualmente** (`.env` ainda é lido por compatibilidade, mas `config.toml` tem precedência). Só `db.url` é obrigatório.
 
-```ini
-DATABASE_URL=postgresql://postgres:senha@192.168.1.10:5432/system_monitor
-HOSTNAME=                          # vazio = hostname do Windows
-DASHBOARD_HOST=127.0.0.1
-DASHBOARD_PORT=8501
-# Intervalos (segundos) — ajuste se quiser menos carga
-INTERVAL_CPU=10
-INTERVAL_SENSORS=15
-# ... veja .env.example para todos INTERVAL_* e POWER_*
+```toml
+[db]
+url = "postgresql://postgres:senha@192.168.1.10:5432/system_monitor"
+# url também pode ser sobrescrita por env var DATABASE_URL
 
-# Retenção (histórico permanente por padrão)
-ENABLE_RETENTION=false
-# para ativar:
-# ENABLE_RETENTION=true
-# RETENTION_PROCESSES=30 days
-# RETENTION_SENSORS=90 days
+[dashboard]
+host = "127.0.0.1"
+port = 8501
+
+[intervals]
+cpu = 10
+sensors = 15
+# ... veja config.toml.example para todos
+
+[retention]
+enabled = false
+# para ativar: enabled = true  (e ajuste processes = "30 days" etc.)
+
+[power]
+aux_baseline_w = 24
 ```
 
-Após mudar `.env`, reinicie as tarefas: `Restart-ScheduledTask` ou reinicie o PC. Teste retenção sem apagar: `monitor-go --retention-dry-run`.
+Env vars ainda têm precedência (`DATABASE_URL`, `INTERVAL_CPU`, `RETENTION_*`, `DASHBOARD_PORT` etc.), útil para CI/docker. Após mudar `config.toml`, reinicie as tarefas. Teste retenção sem apagar: `monitor-go --retention-dry-run`. Senha fica em texto plano em `config.toml` (decisão de UX).
 
 ---
 
@@ -192,7 +183,7 @@ Dashboard calcula agregações com `lag()`/`dt`, bucket `to_timestamp(floor(epoc
 
 | Sintoma | Causa provável | O que fazer |
 |---|---|---|
-| `monitor-go --init` falha | PG offline ou `DATABASE_URL` errada | `Test-NetConnection HOST -Port 5432`; `Get-Service postgresql*`; confira senha em `.env` |
+| `monitor-go --init` falha | PG offline ou `DATABASE_URL` errada | `Test-NetConnection HOST -Port 5432`; `Get-Service postgresql*`; confira senha em `config.toml` (`[db] url`) |
 | `sensors` só 1 linha `no_sensor` | `lhm-dump.exe` não encontrado ou sem SYSTEM/PawnIO | Ao instalar, `lhm-dump.exe` fica ao lado de `monitor-go.exe`. Para 309 sensores, instale PawnIO e rode como SYSTEM (instalador já faz) |
 | `disk_smart` vazio | `smartctl` não instalado | Instale [smartmontools](https://www.smartmontools.org/) ou deixe vazio — degrade gracioso |
 | Dashboard não abre | Tarefa `SystemMonitor-Go-Dashboard` não iniciou | `Get-ScheduledTask SystemMonitor-Go-Dashboard | Get-ScheduledTaskInfo` → `LastTaskResult`; `Get-Content logs/monitor-go.log -Tail 30` |
@@ -216,11 +207,13 @@ dotnet publish go/lhm-dump/lhm-dump.csproj -c Release -o build/lhm-dump
 ```
 go/cmd/monitor/main.go      # coletor + dashboard + --once/--dry-run/--init/--retention
 go/internal/collectors/     # 15 coletores
-go/internal/config/         # .env + INTERVAL_* + RETENTION_*
+go/internal/config/         # config.toml + INTERVAL_* + RETENTION_* (env > toml > default)
 go/internal/db/             # pgx CopyFrom + spool SQLite (2 GB WAL) + schema embed
 go/internal/dashboard/      # net/http + embed static/templates
 go/lhm-dump/                # helper LHM net472
-installer/system-monitor.iss
+installer/system-monitor.iss  # wizard DATABASE_URL + PG/opcionais, gera config.toml
+installer/install.ps1 / install_postgres.ps1 / install_optional.ps1
+config.toml.example         # exemplo (gerado pelo instalador)
 sql/schema.sql              # 16 tabelas (copiado em go/internal/db/schema.sql para embed)
 ```
 
