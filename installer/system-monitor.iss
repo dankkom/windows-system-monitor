@@ -144,7 +144,9 @@ var
   I: Integer;
   C: Char;
   Hex: String;
+  HexDigits: String;
 begin
+  HexDigits := '0123456789ABCDEF';
   Result := '';
   for I := 1 to Length(S) do
   begin
@@ -153,7 +155,7 @@ begin
       Result := Result + C
     else
     begin
-      Hex := '0123456789ABCDEF'[Ord(C) div 16 + 1] + '0123456789ABCDEF'[Ord(C) mod 16 + 1];
+      Hex := HexDigits[Ord(C) div 16 + 1] + HexDigits[Ord(C) mod 16 + 1];
       Result := Result + '%' + Hex;
     end;
   end;
