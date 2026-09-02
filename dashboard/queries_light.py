@@ -69,7 +69,7 @@ def q_cpu_temps(window="1 hour", bucket_seconds=10):
           AND ts > now() - %s::interval AND value BETWEEN 0 AND 120
         GROUP BY bucket, name ORDER BY bucket, name"""
     with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, (*CPU_SENSOR_PATTERNS, bucket_seconds, bucket_seconds, window))
+        cur.execute(sql, (bucket_seconds, bucket_seconds, *CPU_SENSOR_PATTERNS, window))
         return [{"ts": _iso(r[0]), "name": r[1], "value": r[2]} for r in cur.fetchall()]
 
 
