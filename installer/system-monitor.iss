@@ -1,7 +1,7 @@
 ; Inno Setup script for system-monitor (Go + lhm-dump + schema + config.toml)
 ; Requer Inno Setup 6.x. Build via CI ou local: iscc installer/system-monitor.iss
 #define MyAppName "System Monitor"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "dankkom"
 #define MyAppURL "https://github.com/dankkom/windows-system-monitor"
 
