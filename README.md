@@ -1,152 +1,234 @@
-# System Monitor — Windows → PostgreSQL + Dashboard (Go)
+# System Monitor — Instalação em 5 minutos (Windows)
 
-Coleta **contínua e máxima** de telemetria do PC Windows e persiste no PostgreSQL (`system_monitor`, local ou central) com histórico permanente. Binário único Go `monitor-go.exe` (~15 MB, `CGO_ENABLED=0`, sem runtime) + dashboard `http://localhost:8501` (Chart.js estático). Distribuível para qualquer máquina Windows via instalador Inno Setup ou `installer/install.ps1` — requer apenas PostgreSQL externo (`DATABASE_URL`) e, opcionalmente, `smartctl`/`PawnIO` para métricas completas.
+Coleta contínua de telemetria do seu PC Windows e envia para um **PostgreSQL** (local ou central) + dashboard em `http://localhost:8501`. Um único `monitor-go.exe` (~15 MB), sem Python, sem Docker. Ideal para deixar rodando no boot e esquecer.
 
-## Métricas (16 coletores, intervalos configuráveis)
+> **Você só quer instalar?** Vá direto para [Instalação rápida](#instalação-rápida). O resto é detalhe.
 
-| Domínio | Tabela | Intervalo padrão | Fonte (Go) | Dados |
-|---|---|---|---|---|
-| **CPU** | `monitor.cpu` | 10s | `gopsutil/cpu` | total %, per-core %, freq MHz, cores lógicos/físicos |
-| **Memória** | `monitor.memory` | 10s | `gopsutil/mem` | total/available/used %, free, swap, pagefile |
-| **Disco uso** | `monitor.disk_usage` | 60s | `gopsutil/disk` | por volume → total/used/free %, fstype, mount |
-| **Disco IO** | `monitor.disk_io` | 10s | `gopsutil/disk` | read/write bytes/count/time, busy_time + throughput |
-| **Disco físico** | `monitor.physical_disk` | 300s | `Get-PhysicalDisk` (PowerShell) | `FriendlyName`, `MediaType` SSD/HDD/NVMe, `BusType`, `HealthStatus`, `Size` |
-| **SMART** | `monitor.disk_smart` | 300s | `smartctl -a -j` | `temperature_c`, `power_on_hours`, `percentage_used` (wear), `available_spare`, `media_errors` |
-| **Rede IO** | `monitor.net_io` | 10s | `gopsutil/net` | por iface → bytes/packets sent/recv, err/drop, speed, throughput |
-| **Rede addrs** | `monitor.net_addr` | 60s | `gopsutil/net` | iface, family, address, netmask, broadcast |
-| **GPU** | `monitor.gpu` | 10s | `nvidia-smi` | util %, mem total/used/free, temp, power, fan, clocks, PCIe |
-| **Sensores** | `monitor.sensors` | 15s | `lhm-dump.exe` (LHM .NET Framework 4.7.2) | **309 sensores** quando elevado: CPU `Tctl`/`CCD1`, `SuperIO Nuvoton`, GPU, Storage, fans/voltages |
-| **Processos** | `monitor.processes` | 30s | `gopsutil/process` | top 50 por CPU+mem → pid/ppid, name, exe, cmdline, user, cpu/mem %, rss/vms, threads, io |
-| **Conexões** | `monitor.connections` | 30s | `gopsutil/net` | TCP/UDP → laddr/raddr ip:port, status, pid |
-| **Serviços** | `monitor.services` | 60s | `WMI Win32_Service` (`StackExchange/wmi`) | name, display, status, start_type, pid |
-| **Sistema** | `monitor.system_info` | 60s | `gopsutil/host` + `cpu` | boot_time, uptime, OS build, arch, ram 96GB, cpu_name |
-| **EventLog** | `monitor.eventlog` | 60s | `wevtutil` | System/Application → Error/Warning/Info, event_id, provider, count |
-| **Heartbeat** | `monitor.heartbeat` | por coleta | interno | collector, duration_ms, rows, success, error + view `v_last_heartbeat` |
+---
 
-**Dependências externas (opcionais, degradam graciosamente):** `PawnIO 2.2.0` + `LibreHardwareMonitor` (309 sensores via `lhm-dump.exe`, senão 143); `smartmontools 7.5` (`smartctl.exe` para SMART); `nvidia-smi` (GPU); `.NET Framework 4.7.2` runtime para `lhm-dump.exe`. **Obrigatório:** `PostgreSQL 14+` externo (local ou central) acessível via `DATABASE_URL`. Build requer `Go 1.27+` e `.NET SDK 8` apenas para compilar `lhm-dump`.
+## Instalação rápida
 
-## Arquitetura
+### 1. Baixe o instalador
+Em [**Releases**](https://github.com/dankkom/windows-system-monitor/releases) baixe `system-monitor-*-setup.exe` (ou use o `*-windows-amd64.zip` portátil).
 
-```
-C:\scripts\system-monitor/
-├── go/                          # módulo Go (CGO_ENABLED=0)
-│   ├── cmd/monitor/main.go      # binário único: coletor + dashboard + --once/--dry-run/--init/--retention
-│   ├── internal/
-│   │   ├── collectors/          # 15 coletores (cpu, memory, disk, net, gpu, sensors, processes...)
-│   │   ├── config/              # .env + INTERVAL_* + POWER_* + RETENTION_*
-│   │   ├── db/                  # pgx CopyFrom + spool SQLite + retention + schema embed
-│   │   ├── spool/               # SQLite WAL buffer (2 GB)
-│   │   └── dashboard/           # net/http + queries + embed static/templates
-│   ├── lhm-dump/                # helper LHM (lhm-dump.csproj net472, CopyLocalLockFileAssemblies)
-│   └── monitor-go.exe           # binário (go build, ~15 MB)
-├── sql/schema.sql               # 16 tabelas + índices + view (embed em go/internal/db/schema.sql)
-├── installer/
-│   ├── system-monitor.iss       # Inno Setup (gera setup.exe)
-│   └── install.ps1              # one-click: build + copia para Program Files + --init + tasks
-├── scripts/
-│   ├── install_tasks_go.ps1     # SystemMonitor-Go / Go-Dashboard (SYSTEM)
-│   └── install_retention_go.ps1 # SystemMonitor-Go-Retention 02:00 (SYSTEM, só se ENABLE_RETENTION=true)
-├── .env/.env.example
-└── logs/                        # monitor-go.log + pending_batches.sqlite3
+> Alternativa sem instalador: `powershell -ExecutionPolicy Bypass -File installer/install.ps1` direto do repositório clonado (faz build local).
+
+### 2. Execute como Administrador
+Duplo-clique no `setup.exe` **como Administrador** → instala em `C:\Program Files\system-monitor`.
+
+O instalador já:
+- copia `monitor-go.exe` + `lhm-dump.exe` (sensores)
+- cria `.env` a partir de `.env.example` se não existir
+- roda `monitor-go --init` (cria o banco `system_monitor` + 16 tabelas)
+- registra 3 tarefas no boot (SYSTEM): `SystemMonitor-Go` (coletor), `SystemMonitor-Go-Dashboard` (dashboard) e `SystemMonitor-Go-Retention` (limpeza, só se ativada)
+
+### 3. Configure o banco (único passo manual)
+Edite **`C:\Program Files\system-monitor\.env`** e ajuste:
+
+```ini
+DATABASE_URL=postgresql://postgres:SUA_SENHA@HOST:5432/system_monitor
+# HOST = localhost (PG local) ou IP do servidor central
 ```
 
-**Fluxo:** `monitor-go` loop (1s tick, `services`/`processes` via goroutines) → `collectors.*` → `db.Store.InsertBatch` (`pgx CopyFrom`) → `heartbeat` → `logs/monitor-go.log`. Dashboard `net/http` serve `go/internal/dashboard` (mesmas queries SQL, mesmo JSON). Histórico permanente; spool `pending_batches.sqlite3` bufferiza quando PG cai.
+Se o PostgreSQL for **local**, instale-o antes (ex.: [PostgreSQL 18](https://www.postgresql.org/download/windows/)) e garanta que está rodando: `Get-Service postgresql*`.
 
-## Requisitos
+Se for **central**, aponte para ele — todos os PCs podem enviar para o mesmo banco.
 
-- Windows 10/11, PostgreSQL externo (local ou central, 14+) acessível via `DATABASE_URL`
-- Opcional para métricas completas: `PawnIO` (309 sensores), `smartmontools` (`smartctl`), `nvidia-smi` (GPU NVIDIA)
-- Build (só para gerar instalador): `Go 1.27+`, `.NET SDK 8`
-- Verificar: `go version; dotnet --version; psql --version; sc.exe query PawnIO; smartctl --version`
-
-## Distribuição / Instalação em máquina nova
-
-### Opção A — one-click (recomendado para teste)
+Depois aplique (ou reaplique) o schema:
 
 ```powershell
-# Requer admin. Builda, copia para Program Files, cria .env, aplica schema e registra tasks.
+& "C:\Program Files\system-monitor\monitor-go.exe" --init
+```
+
+### 4. Confira se está coletando
+```powershell
+Get-Content "C:\Program Files\system-monitor\logs\monitor-go.log" -Tail 20
+# deve mostrar: [sensors] 309 rows -> monitor.sensors ... stored  (ou 143 sem PawnIO)
+Invoke-WebRequest http://localhost:8501/api/health -UseBasicParsing
+# StatusCode 200 = dashboard ok
+```
+
+Abra **http://localhost:8501** no navegador. Pronto — coleta já está no boot e sobrevive a reinícios. Logs em `logs/monitor-go.log`; se o banco cair, os dados ficam em `pending_batches.sqlite3` e são reenviados.
+
+---
+
+## O que você precisa antes
+
+| Obrigatório | Detalhe |
+|---|---|
+| **Windows 10/11** | Testado em 11. Roda como `SYSTEM` via Tarefas Agendadas |
+| **PostgreSQL 14+** | Local ou remoto. Só precisa de `DATABASE_URL`. Não instala PG sozinho |
+
+| Opcional (melhora dados, não trava) | O que ganha |
+|---|---|
+| **PawnIO + LibreHardwareMonitor** | 309 sensores (CPU `Tctl`/`CCD1`, SuperIO Nuvoton, fans/voltages) vs 143 sem |
+| **smartmontools** (`smartctl`) | SMART de discos: `temperature_c`, `power_on_hours`, `percentage_used` |
+| **nvidia-smi** | GPU NVIDIA: util, memória, temp, power, clocks |
+| **.NET Framework 4.7.2** | Já vem no Windows 11; só para `lhm-dump.exe` |
+
+Sem esses opcionais o agente ainda sobe — as tabelas correspondentes ficam com `no_sensor` ou vazias.
+
+---
+
+## Passo a passo detalhado
+
+### Opção A — Instalador (recomendado)
+1. Baixe `system-monitor-*-setup.exe` em Releases.
+2. Clique direito → **Executar como administrador** → Avançar.
+3. Edite `C:\Program Files\system-monitor\.env` (`DATABASE_URL`).
+4. `& "C:\Program Files\system-monitor\monitor-go.exe" --init`
+5. Reinicie ou `Start-ScheduledTask -TaskName SystemMonitor-Go,SystemMonitor-Go-Dashboard`
+
+**Desinstalar:** Painel de Controle → Programas → System Monitor → Desinstalar (remove as 3 tarefas).
+
+### Opção B — `install.ps1` (sem gerar `setup.exe`)
+Para quem clonou o repo e quer instalar direto sem Inno Setup:
+
+```powershell
+git clone https://github.com/dankkom/windows-system-monitor.git
+cd windows-system-monitor
 powershell -ExecutionPolicy Bypass -File installer/install.ps1
-# Edite C:\Program Files\system-monitor\.env -> DATABASE_URL=postgresql://user:senha@HOST:5432/system_monitor
-# Depois: & "C:\Program Files\system-monitor\monitor-go.exe" --init
+# edite C:\Program Files\system-monitor\.env depois e rode --init
 ```
 
-### Opção B — Inno Setup (distribuível)
+### Opção C — Manual / portátil (sem admin, sem tarefas)
+Útil para testar sem instalar:
 
 ```powershell
-# 1. Build binários
-go build -o go/monitor-go.exe ./go/cmd/monitor
-dotnet publish go/lhm-dump/lhm-dump.csproj -c Release -o build/lhm-dump
-# 2. Gerar instalador (requer Inno Setup 6)
-iscc installer/system-monitor.iss
-# Saída: dist/system-monitor-1.0.0-setup.exe  (executar como admin em qualquer host)
-```
-
-Instalador faz: copia para `{pf}\system-monitor`, cria `.env` de `.env.example` se ausente, roda `monitor-go --init` (cria DB + aplica schema), registra `SystemMonitor-Go` / `SystemMonitor-Go-Dashboard` / `SystemMonitor-Go-Retention` (SYSTEM, boot 02:00).
-
-### Opção C — manual (dev)
-
-```powershell
-# 1. Build
-go build -o go/monitor-go.exe ./go/cmd/monitor
-dotnet publish go/lhm-dump/lhm-dump.csproj -c Release -o C:\tools\lhm-dump
-
-# 2. .env
 copy .env.example .env
-# Edite DATABASE_URL (local ou central): postgresql://postgres:senha@HOST:5432/system_monitor
-
-# 3. Banco + schema (automatico, substitui psql manual)
+# edite DATABASE_URL
 .\go\monitor-go.exe --init
-# Alternativa manual: psql -U postgres -h HOST -d postgres -c "CREATE DATABASE system_monitor"
-#                   psql -U postgres -h HOST -d system_monitor -f sql/schema.sql
-
-# 4. Testar
-.\go\monitor-go.exe --dry-run
-.\go\monitor-go.exe --once; Get-Content logs\monitor-go.log -Tail 20
-.\go\monitor-go.exe --retention-dry-run   # simula limpeza
-# Se ENABLE_RETENTION=true: .\go\monitor-go.exe --retention
-
-# 5. Tasks (admin)
-powershell -ExecutionPolicy Bypass -File .\scripts\install_tasks_go.ps1
-powershell -ExecutionPolicy Bypass -File .\scripts\install_retention_go.ps1  # opcional
-# Dashboard: http://127.0.0.1:8501  (/api/health, /api/ready, /api/status)
+.\go\monitor-go.exe --dry-run   # testa coletores sem gravar
+.\go\monitor-go.exe --once      # uma coleta completa
+.\go\monitor-go.exe --serve     # só dashboard em http://localhost:8501
 ```
 
-## Uso diário
+Para rodar coleta + dashboard juntos manualmente: `.\go\monitor-go.exe --collect --serve`.
+
+---
+
+## Primeiro acesso ao dashboard
+
+- URL: **http://localhost:8501** (ou `http://SEU_HOST:8501` se mudou `DASHBOARD_HOST/PORT` no `.env`)
+- Health: `/api/health` (200), `/api/ready`, `/api/status` (pendências do spool)
+- Se não abrir, veja `logs/monitor-go.log` e `Get-ScheduledTask SystemMonitor-Go* | Get-ScheduledTaskInfo`.
+
+---
+
+## Configuração (.env)
+
+Tudo via `.env` ao lado do `monitor-go.exe` (ou `C:\Program Files\system-monitor\.env` quando instalado). Valores padrão funcionam; só `DATABASE_URL` é obrigatório.
+
+```ini
+DATABASE_URL=postgresql://postgres:senha@192.168.1.10:5432/system_monitor
+HOSTNAME=                          # vazio = hostname do Windows
+DASHBOARD_HOST=127.0.0.1
+DASHBOARD_PORT=8501
+# Intervalos (segundos) — ajuste se quiser menos carga
+INTERVAL_CPU=10
+INTERVAL_SENSORS=15
+# ... veja .env.example para todos INTERVAL_* e POWER_*
+
+# Retenção (histórico permanente por padrão)
+ENABLE_RETENTION=false
+# para ativar:
+# ENABLE_RETENTION=true
+# RETENTION_PROCESSES=30 days
+# RETENTION_SENSORS=90 days
+```
+
+Após mudar `.env`, reinicie as tarefas: `Restart-ScheduledTask` ou reinicie o PC. Teste retenção sem apagar: `monitor-go --retention-dry-run`.
+
+---
+
+## Gerenciamento no dia a dia
 
 ```powershell
-Get-Content logs\monitor-go.log -Tail 50
-psql -U postgres -h localhost -d system_monitor -c "SELECT * FROM monitor.v_last_heartbeat WHERE success=false;"
-Invoke-WebRequest http://127.0.0.1:8501/api/health -UseBasicParsing
-Invoke-WebRequest http://127.0.0.1:8501/api/status -UseBasicParsing
-# parar/iniciar
+# logs
+Get-Content "C:\Program Files\system-monitor\logs\monitor-go.log" -Tail 50
+
+# pausar/retomar
 Stop-ScheduledTask -TaskName SystemMonitor-Go, SystemMonitor-Go-Dashboard
-Start-ScheduledTask -TaskName SystemMonitor-Go
+Start-ScheduledTask -TaskName SystemMonitor-Go; Start-ScheduledTask -TaskName SystemMonitor-Go-Dashboard
+
+# checar último heartbeat com falha
+psql -U postgres -h HOST -d system_monitor -c "SELECT * FROM monitor.v_last_heartbeat WHERE success=false;"
+
+# testar retenção
+& "C:\Program Files\system-monitor\monitor-go.exe" --retention-dry-run
+& "C:\Program Files\system-monitor\monitor-go.exe" --retention  # só se ENABLE_RETENTION=true
 ```
 
-## Dashboard / Energia
+---
 
-Agregações: bucket `to_timestamp(floor(epoch/bucket)*bucket)`, `disk_io`/`net` com `lag()` + `dt`/`max_gap`, potência `estimated = (CPU Package + GPU + POWER_AUX_BASELINE_W) / POWER_PSU_EFFICIENCY` com `POWER_GPU_IDLE_W`/`MAX_W` modelo linear, integração trapezoidal Wh/kWh, qualidade `partial`/`estimated_default`/`estimated_calibrated`.
+## O que é coletado
 
-## Retenção
+16 tabelas em `monitor` (intervalos configuráveis, histórico permanente):
 
-Desabilitada por padrão (histórico permanente). Para ativar, em `.env`:
+| Domínio | Tabela | Intervalo | Fonte | Exemplo |
+|---|---|---|---|---|
+| CPU | `monitor.cpu` | 10s | gopsutil | total %, per-core, freq MHz |
+| Memória | `monitor.memory` | 10s | gopsutil | total/used %, swap, pagefile |
+| Disco uso | `monitor.disk_usage` | 60s | gopsutil | por volume → total/used/free |
+| Disco IO | `monitor.disk_io` | 10s | gopsutil | read/write bytes, busy_time |
+| Disco físico | `monitor.physical_disk` | 300s | Get-PhysicalDisk | SSD/HDD/NVMe, HealthStatus |
+| SMART | `monitor.disk_smart` | 300s | smartctl -j | temperature, wear, power_on_hours |
+| Rede IO | `monitor.net_io` | 10s | gopsutil | bytes/packets, err/drop |
+| Rede addrs | `monitor.net_addr` | 60s | gopsutil | iface, address, netmask |
+| GPU | `monitor.gpu` | 10s | nvidia-smi | util, mem, temp, power, fan |
+| Sensores | `monitor.sensors` | 15s | lhm-dump.exe | 309 sensores quando SYSTEM+PawnIO |
+| Processos | `monitor.processes` | 30s | gopsutil | top 50 por CPU/mem |
+| Conexões | `monitor.connections` | 30s | gopsutil | TCP/UDP laddr/raddr, pid |
+| Serviços | `monitor.services` | 60s | WMI Win32_Service | name, status, start_type |
+| Sistema | `monitor.system_info` | 60s | gopsutil/host | boot_time, OS build, RAM |
+| EventLog | `monitor.eventlog` | 60s | wevtutil | System/Application Error/Warning |
+| Heartbeat | `monitor.heartbeat` | por coleta | interno | duration_ms, rows, success + `v_last_heartbeat` |
 
-```
-ENABLE_RETENTION=true
-RETENTION_PROCESSES=30 days
-RETENTION_CONNECTIONS=7 days
-# ... veja .env.example
-```
+Dashboard calcula agregações com `lag()`/`dt`, bucket `to_timestamp(floor(epoch/bucket)*bucket)` e estimativa de potência ` (CPU Package + GPU + POWER_AUX_BASELINE_W) / POWER_PSU_EFFICIENCY`.
 
-Registre a task diária: `powershell -ExecutionPolicy Bypass -File scripts/install_retention_go.ps1` (02:00 SYSTEM).
-Teste: `monitor-go --retention-dry-run` (conta) / `monitor-go --retention` (delete paginado, `RETENTION_BATCH_LIMIT`/`RETENTION_BATCH_SLEEP`).
+---
 
-## Troubleshooting
+## Solução de problemas (instalação)
 
-| Sintoma | Causa | Solução |
+| Sintoma | Causa provável | O que fazer |
 |---|---|---|
-| `sensors` 1 linha `no_sensor` | helper não encontrado/sem elevação | `lhm-dump.exe` deve estar ao lado de `monitor-go.exe` ou em `C:\tools\lhm-dump`; recompile `dotnet publish` e rode como SYSTEM com PawnIO |
-| `disk_smart` vazio | `smartctl` ausente | `C:\Program Files\smartmontools\bin\smartctl.exe` ou `smartctl` no PATH |
-| `init` falha | PG offline / URL errada | Verifique `DATABASE_URL` e `Get-Service postgresql*`; `monitor-go --init` cria DB + schema |
-| `retention` não apaga | `ENABLE_RETENTION=false` | Ative no `.env` e rode `monitor-go --retention` |
-| `Task LastTaskResult 1` | SYSTEM sem permissão | `install_tasks_go.ps1` como admin |
+| `monitor-go --init` falha | PG offline ou `DATABASE_URL` errada | `Test-NetConnection HOST -Port 5432`; `Get-Service postgresql*`; confira senha em `.env` |
+| `sensors` só 1 linha `no_sensor` | `lhm-dump.exe` não encontrado ou sem SYSTEM/PawnIO | Ao instalar, `lhm-dump.exe` fica ao lado de `monitor-go.exe`. Para 309 sensores, instale PawnIO e rode como SYSTEM (instalador já faz) |
+| `disk_smart` vazio | `smartctl` não instalado | Instale [smartmontools](https://www.smartmontools.org/) ou deixe vazio — degrade gracioso |
+| Dashboard não abre | Tarefa `SystemMonitor-Go-Dashboard` não iniciou | `Get-ScheduledTask SystemMonitor-Go-Dashboard | Get-ScheduledTaskInfo` → `LastTaskResult`; `Get-Content logs/monitor-go.log -Tail 30` |
+| `Task LastTaskResult 1` | Instalador não rodou como admin | Reinstale clicando direito → Executar como administrador |
+
+---
+
+<details>
+<summary><strong>Para desenvolvedores (build, arquitetura, CI)</strong></summary>
+
+### Build local
+
+```powershell
+go build -o go/monitor-go.exe ./go/cmd/monitor          # CGO_ENABLED=0, ~15 MB
+dotnet publish go/lhm-dump/lhm-dump.csproj -c Release -o build/lhm-dump
+.\go\monitor-go.exe --dry-run; .\go\monitor-go.exe --once; Get-Content logs/monitor-go.log -Tail 20
+```
+
+### Arquitetura
+
+```
+go/cmd/monitor/main.go      # coletor + dashboard + --once/--dry-run/--init/--retention
+go/internal/collectors/     # 15 coletores
+go/internal/config/         # .env + INTERVAL_* + RETENTION_*
+go/internal/db/             # pgx CopyFrom + spool SQLite (2 GB WAL) + schema embed
+go/internal/dashboard/      # net/http + embed static/templates
+go/lhm-dump/                # helper LHM net472
+installer/system-monitor.iss
+sql/schema.sql              # 16 tabelas (copiado em go/internal/db/schema.sql para embed)
+```
+
+Fluxo: `monitor-go` loop 1s tick (`services`/`processes` em goroutines) → `collectors` → `db.Store.InsertBatch` (`CopyFrom`) → `heartbeat` → `logs/monitor-go.log`. Dashboard serve `go/internal/dashboard`. Spool `pending_batches.sqlite3` bufferiza quando PG cai.
+
+### CI/Release
+
+- `ci.yml` (push/PR): `windows-latest` `go vet`/`build`/`test` + `dotnet publish` + artifact.
+- `release.yml` (tag `v*`): `CGO_ENABLED=0` build + `dotnet publish` + `Compress-Archive` zip + `ISCC installer/system-monitor.iss` → `dist/*.exe` → `softprops/action-gh-release`.
+
+</details>
