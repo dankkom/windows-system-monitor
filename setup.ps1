@@ -137,7 +137,7 @@ Invoke-Psql -Arguments @("-U", $DbUser, "-h", $DbHost, "-p", $DbPort, "-d", $DbN
 
 Write-Host "[5/6] Teste de coleta" -ForegroundColor Cyan
 $ErrorActionPreference = "Continue"
-$dryRunOutput = & $VenvPython (Join-Path $Root "monitor.py") --dry-run 2>&1
+$dryRunOutput = & $VenvPython (Join-Path $Root "monitor_pkg\main.py") --dry-run 2>&1
 $dryRunExit = $LASTEXITCODE
 $ErrorActionPreference = "Stop"
 $dryRunOutput | Select-String "\[DRY" | Select-Object -First 3 | Out-Host

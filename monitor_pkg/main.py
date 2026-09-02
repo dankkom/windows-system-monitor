@@ -7,7 +7,15 @@ import time
 import logging
 import signal
 import sys
+from pathlib import Path
 from logging.handlers import RotatingFileHandler
+
+# Garante que a raiz do projeto esteja no sys.path ao rodar via task
+# (python monitor_pkg\main.py a partir do WorkingDirectory), pois o Python
+# só adiciona o diretório do script, não o CWD.
+_RUN_ROOT = Path(__file__).resolve().parent.parent
+if str(_RUN_ROOT) not in sys.path:
+    sys.path.insert(0, str(_RUN_ROOT))
 
 import psycopg
 
