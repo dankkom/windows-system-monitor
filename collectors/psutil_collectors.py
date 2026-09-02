@@ -3,7 +3,10 @@ Coletores baseados em psutil: cpu, memory, disk (io/usage), network (io/addrs),
 connections e services. Todos exponem a mesma interface: collect_*(hostname) -> (columns, rows).
 """
 import json
+import logging
 import psutil
+
+log = logging.getLogger(__name__)
 from datetime import datetime, timezone
 
 
@@ -234,6 +237,5 @@ def collect_services(hostname):
                 except Exception:
                     continue
         except Exception as exc2:
-            rows.append((ts, hostname, "error", str(exc2)[:200], "error",
-                         None, None, json.dumps({"error": str(exc)})))
+            log.warning("collect_services failed (wmi=%s, fallback=%s)", exc, exc2)
     return columns, rows

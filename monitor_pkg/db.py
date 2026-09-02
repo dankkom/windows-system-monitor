@@ -57,6 +57,9 @@ def insert_batch(table: str, columns: list[str], rows: list[tuple]) -> WriteResu
         SPOOL.enqueue(table, columns, rows)
         log.warning("database unavailable; buffered %s rows for %s: %s", len(rows), table, exc)
         return WriteResult(len(rows), "buffered")
+    except ValueError as exc:
+        log.warning("batch rejected for %s (%s rows, %s); data discarded", table, len(rows), exc)
+        return WriteResult(0, "spool_overflow")
 
 
 def replay_pending() -> int:

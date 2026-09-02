@@ -5,6 +5,7 @@ Mantém histórico permanente. Só apaga se ENABLE_RETENTION=true em .env
 """
 import os
 import sys
+import time
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -16,6 +17,8 @@ from monitor_pkg.config import DATABASE_URL
 
 ENABLE = os.getenv("ENABLE_RETENTION", "false").lower() in ("1","true","yes","on")
 DRY = "--dry" in sys.argv
+BATCH_LIMIT = int(os.getenv("RETENTION_BATCH_LIMIT", "50000"))
+BATCH_SLEEP = float(os.getenv("RETENTION_BATCH_SLEEP", "0.1"))
 
 # Retenção por tabela (pode ajustar via .env)
 RETENTION = {
@@ -32,8 +35,19 @@ RETENTION = {
     "monitor.net_io":       os.getenv("RETENTION_NET_IO", "90 days"),
 }
 
+def _delete_paginated(cur, table, interval):
+    total = 0
+    while True:
+        cur.execute(f"DELETE FROM {table} WHERE ts < now() - interval %s AND ctid IN (SELECT ctid FROM {table} WHERE ts < now() - interval %s LIMIT %s)", (interval, interval, BATCH_LIMIT))
+        deleted = cur.rowcount
+        total += deleted
+        if deleted < BATCH_LIMIT:
+            break
+        time.sleep(BATCH_SLEEP)
+    return total
+
 def run():
-    print(f"[{datetime.now(timezone.utc).isoformat()}] Retention ENABLE={ENABLE} DRY={DRY}")
+    print(f"[{datetime.now(timezone.utc).isoformat()}] Retention ENABLE={ENABLE} DRY={DRY} batch_limit={BATCH_LIMIT}")
     if not ENABLE:
         print("Retenção DESABILITADA - histórico permanente. Defina ENABLE_RETENTION=true para ativar.")
         return 0
@@ -41,14 +55,12 @@ def run():
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
             for table, interval in RETENTION.items():
-                sql = f"DELETE FROM {table} WHERE ts < now() - interval %s"
                 if DRY:
                     cur.execute(f"SELECT count(*) FROM {table} WHERE ts < now() - interval %s", (interval,))
                     cnt = cur.fetchone()[0]
                     print(f"[DRY] {table} intervalo {interval} -> deletaria {cnt} linhas")
                 else:
-                    cur.execute(sql, (interval,))
-                    cnt = cur.rowcount
+                    cnt = _delete_paginated(cur, table, interval)
                     print(f"[DELETE] {table} intervalo {interval} -> {cnt} linhas")
                     total_deleted += cnt
         if not DRY:

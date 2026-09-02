@@ -7,6 +7,7 @@ import time
 import logging
 import signal
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
@@ -86,6 +87,8 @@ COLLECTORS = {
     "eventlog":     (collect_eventlog,                                      "monitor.eventlog",      config.INTERVALS["eventlog"]),
 }
 
+SLOW_COLLECTORS = {"services", "processes"}
+
 def run_collector(name, func, table, interval_state):
     start = time.time()
     try:
@@ -138,6 +141,8 @@ def main(once=False, dry_run=False):
 
     # loop contínuo: verifica cada segundo se intervalo expirou
     last_run = {name: 0 for name in COLLECTORS}
+    slow_busy = {name: False for name in SLOW_COLLECTORS}
+    slow_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="slow")
     # warmup psutil cpu_percent
     try:
         import psutil
@@ -153,15 +158,27 @@ def main(once=False, dry_run=False):
         now = time.time()
         for name, (func, table, interval) in COLLECTORS.items():
             if now - last_run[name] >= interval:
-                run_collector(name, func, table, None)
-                last_run[name] = now
-                if not running:
-                    break
+                if name in SLOW_COLLECTORS:
+                    if not slow_busy[name]:
+                        slow_busy[name] = True
+                        def _run_slow(n=name, f=func, t=table):
+                            try:
+                                run_collector(n, f, t, None)
+                            finally:
+                                slow_busy[n] = False
+                        slow_executor.submit(_run_slow)
+                        last_run[name] = now
+                else:
+                    run_collector(name, func, table, None)
+                    last_run[name] = now
+                    if not running:
+                        break
         # sleep 1s mas respeita shutdown
         for _ in range(10):
             if not running:
                 break
             time.sleep(0.1)
+    slow_executor.shutdown(wait=False, cancel_futures=True)
 
     logger.info("Monitor stopped gracefully")
 

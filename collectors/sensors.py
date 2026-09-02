@@ -1,4 +1,5 @@
 import json
+import logging
 import psutil
 from datetime import datetime, timezone
 
@@ -9,7 +10,24 @@ _LHM_ERROR = None
 
 def _clean_text(value):
     """PostgreSQL text/jsonb reject NUL bytes sometimes exposed by hardware firmware."""
-    return str(value).replace("\x00", "�")
+    return str(value).replace("\x00", "\ufffd")
+
+_SENSOR_UNITS = {
+    "temperature": "C",
+    "load": "%",
+    "clock": "MHz",
+    "voltage": "V",
+    "fan": "RPM",
+    "power": "W",
+    "data": "GB",
+    "smalldata": "MB",
+    "throughput": "B/s",
+    "current": "A",
+    "energy": "Wh",
+    "noise": "dBA",
+    "control": "%",
+    "level": "%",
+}
 
 def _get_lhm_computer():
     global _LHM, _LHM_ERROR
@@ -71,23 +89,7 @@ def _collect_lhm(hostname, ts):
                         continue
                     sensor_type = _clean_text(s.SensorType).lower()  # temperature, load, clock, voltage, fan, power, data, throughput, etc
                     # map SensorType to our sensor_type + unit
-                    unit_map = {
-                        "temperature": "C",
-                        "load": "%",
-                        "clock": "MHz",
-                        "voltage": "V",
-                        "fan": "RPM",
-                        "power": "W",
-                        "data": "GB",
-                        "smalldata": "MB",
-                        "throughput": "B/s",
-                        "current": "A",
-                        "energy": "Wh",
-                        "noise": "dBA",
-                        "control": "%",
-                        "level": "%",
-                    }
-                    unit = unit_map.get(sensor_type, "")
+                    unit = _SENSOR_UNITS.get(sensor_type, "")
                     # keep only meaningful sensors (skip noisy 0.0 package Power etc, but keep)
                     sensor_name = _clean_text(s.Name)
                     name = f"{hw_type}:{hw_name}:{sensor_name}"
@@ -124,8 +126,7 @@ def _collect_lhm(hostname, ts):
                         if val is None:
                             continue
                         sensor_type = _clean_text(s.SensorType).lower()
-                        unit_map = {"temperature":"C","load":"%","clock":"MHz","voltage":"V","fan":"RPM","power":"W","data":"GB","smalldata":"MB","throughput":"B/s","current":"A","energy":"Wh","noise":"dBA","control":"%","level":"%"}
-                        unit = unit_map.get(sensor_type, "")
+                        unit = _SENSOR_UNITS.get(sensor_type, "")
                         sensor_name = _clean_text(s.Name)
                         name = f"{sub_type}:{sub_name}:{sensor_name}"
                         label = f"{sub_name} {sensor_name}"
@@ -173,12 +174,10 @@ def collect(hostname):
         except:
             pass
 
-    # Se ainda sem rows, placeholder
+    # Se ainda sem rows, sem dados de sensores disponíveis
     if not rows:
         if _LHM_ERROR:
-            rows.append((ts, hostname, "error", "lhm_init_failed", _LHM_ERROR[:500], None, "", json.dumps({"error": _LHM_ERROR, "note": "LHM init failed, no sensors"})))
-        else:
-            rows.append((ts, hostname, "temperature", "none", "no_sensor", None, "C", json.dumps({"note": "no sensors via LHM/psutil/WMI"})))
+            logging.getLogger(__name__).warning("LHM init failed, no sensor data: %s", _LHM_ERROR)
 
     columns = ["ts","hostname","sensor_type","name","label","value","unit","raw"]
     return columns, rows

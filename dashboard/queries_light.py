@@ -21,6 +21,10 @@ def _iso(value: datetime) -> str:
     return value.isoformat()
 
 
+CPU_SENSOR_PATTERNS = ["%cpu%", "%core%", "%tctl%", "%ccd%"]
+CPU_SENSOR_WHERE = "(" + " OR ".join("name ILIKE %s" for _ in CPU_SENSOR_PATTERNS) + ")"
+
+
 def q_cpu(window="1 hour", bucket_seconds=10):
     bucket = _bucket_expr()
     sql = f"""SELECT {bucket} AS bucket, avg(cpu_total_percent), avg(freq_current_mhz)
@@ -61,21 +65,21 @@ def q_cpu_temps(window="1 hour", bucket_seconds=10):
     sql = f"""SELECT {bucket} AS bucket, name, avg(value)
         FROM monitor.sensors
         WHERE sensor_type='temperature'
-          AND (name ILIKE '%%cpu%%' OR name ILIKE '%%core%%' OR name ILIKE '%%tctl%%' OR name ILIKE '%%ccd%%')
+          AND {CPU_SENSOR_WHERE}
           AND ts > now() - %s::interval AND value BETWEEN 0 AND 120
         GROUP BY bucket, name ORDER BY bucket, name"""
     with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql, (bucket_seconds, bucket_seconds, window))
+        cur.execute(sql, (*CPU_SENSOR_PATTERNS, bucket_seconds, bucket_seconds, window))
         return [{"ts": _iso(r[0]), "name": r[1], "value": r[2]} for r in cur.fetchall()]
 
 
 def q_cpu_temps_latest():
-    sql = """SELECT DISTINCT ON (name) name, value, unit, ts FROM monitor.sensors
+    sql = f"""SELECT DISTINCT ON (name) name, value, unit, ts FROM monitor.sensors
         WHERE sensor_type='temperature'
-          AND (name ILIKE '%%cpu%%' OR name ILIKE '%%core%%' OR name ILIKE '%%tctl%%' OR name ILIKE '%%ccd%%')
+          AND {CPU_SENSOR_WHERE}
           AND value BETWEEN 10 AND 120 ORDER BY name, ts DESC"""
     with get_conn() as conn, conn.cursor() as cur:
-        cur.execute(sql)
+        cur.execute(sql, (*CPU_SENSOR_PATTERNS,))
         return [{"name": r[0], "value": r[1], "unit": r[2], "ts": _iso(r[3])} for r in cur.fetchall()]
 
 

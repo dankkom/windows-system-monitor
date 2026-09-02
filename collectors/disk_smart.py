@@ -1,4 +1,5 @@
 import json
+import logging
 import subprocess
 import shutil
 import os
@@ -7,6 +8,8 @@ from datetime import datetime, timezone
 SMARTCTL = r"C:\Program Files\smartmontools\bin\smartctl.exe"
 if not os.path.exists(SMARTCTL):
     SMARTCTL = shutil.which("smartctl") or "smartctl"
+
+log = logging.getLogger(__name__)
 
 def _run(cmd, timeout=10):
     try:
@@ -47,6 +50,9 @@ def collect_physical(hostname):
 def collect_smart(hostname):
     ts = datetime.now(timezone.utc)
     rows = []
+    if shutil.which(SMARTCTL) is None and not os.path.exists(SMARTCTL):
+        log.warning("smartctl indisponível; coletor SMART desativado")
+        return rows
     # scan devices
     scan_out = _run([SMARTCTL, "--scan"], timeout=10)
     devices = []

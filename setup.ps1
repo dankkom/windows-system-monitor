@@ -5,6 +5,9 @@ param(
     [string]$DbUser = "postgres",
     [string]$DbHost = "localhost",
     [int]$DbPort = 5432,
+    [string]$PsqlPath = "",
+    [string]$LhmDir = "C:\tools\LibreHardwareMonitor",
+    [string]$SmartctlPath = "C:\Program Files\smartmontools\bin\smartctl.exe",
     [switch]$Elevated
 )
 
@@ -45,7 +48,7 @@ function Set-EnvSetting([string]$Path, [string]$Name, [string]$Value) {
 function Invoke-Psql([string[]]$Arguments, [string]$Failure) {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    $output = & $Psql @Arguments 2>&1
+    $output = & $PsqlPath @Arguments 2>&1
     $exitCode = $LASTEXITCODE
     $ErrorActionPreference = $previous
     if ($exitCode -ne 0) { throw "$Failure`n$($output | Out-String)" }
@@ -113,20 +116,20 @@ Set-EnvSetting $EnvFile "POWER_GPU_IDLE_W" $PowerGpuIdle
 Set-EnvSetting $EnvFile "POWER_GPU_MAX_W" $PowerGpuMax
 
 Write-Host "[3/6] Dependencias de hardware" -ForegroundColor Cyan
-$LhmDir = "C:\tools\LibreHardwareMonitor"
 if (-not (Test-Path (Join-Path $LhmDir "LibreHardwareMonitorLib.dll"))) {
-    New-Item -ItemType Directory -Force -Path "C:\tools" | Out-Null
-    $zip = "C:\tools\LibreHardwareMonitor.zip"
+    $parentDir = Split-Path $LhmDir -Parent
+    if (-not (Test-Path $parentDir)) { New-Item -ItemType Directory -Force -Path $parentDir | Out-Null }
+    $zip = "$LhmDir.zip"
     Invoke-WebRequest "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases/download/v0.9.6/LibreHardwareMonitor.zip" -OutFile $zip
     Expand-Archive -Path $zip -DestinationPath $LhmDir -Force
 }
-if (-not (Test-Path "C:\Program Files\smartmontools\bin\smartctl.exe")) {
-    Write-Host "Aviso: smartmontools ausente; instale com winget para dados SMART." -ForegroundColor Yellow
+if (-not (Test-Path $SmartctlPath)) {
+    Write-Host "Aviso: smartmontools ausente em $SmartctlPath; instale com winget para dados SMART." -ForegroundColor Yellow
 }
 
 Write-Host "[4/6] PostgreSQL e schema" -ForegroundColor Cyan
-$Psql = "C:\Program Files\PostgreSQL\18\bin\psql.exe"
-if (-not (Test-Path $Psql)) { $Psql = "psql" }
+if (-not $PsqlPath) { $PsqlPath = "psql" }
+if (-not (Get-Command $PsqlPath -ErrorAction SilentlyContinue)) { throw "psql nao encontrado em '$PsqlPath'. Instale o PostgreSQL ou passe -PsqlPath." }
 if ($DbPassword) { $env:PGPASSWORD = $DbPassword }
 $exists = Invoke-Psql -Arguments @("-U", $DbUser, "-h", $DbHost, "-p", $DbPort, "-d", "postgres", "-tAc", "SELECT 1 FROM pg_database WHERE datname = '$DbName'") -Failure "Nao foi possivel conectar ao PostgreSQL em $DbHost`:$DbPort."
 if (-not ($exists -match '1')) {

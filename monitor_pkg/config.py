@@ -52,6 +52,10 @@ def load_settings() -> Settings:
     database_url = os.getenv("DATABASE_URL", "").strip()
     if not database_url.startswith(("postgresql://", "postgres://")):
         raise ValueError("DATABASE_URL must be a PostgreSQL URL")
+    # If password is omitted from URL, psycopg falls back to PGPASSWORD env / pgpass file
+    has_password = database_url.split("@", 1)[0].count(":") >= 2
+    if not has_password and not os.getenv("PGPASSWORD"):
+        raise ValueError("DATABASE_URL without password requires PGPASSWORD env var or pgpass.conf")
     port = _positive_int("DASHBOARD_PORT", 8501)
     if port > 65535:
         raise ValueError("DASHBOARD_PORT must be <= 65535")
