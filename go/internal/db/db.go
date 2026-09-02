@@ -4,11 +4,14 @@ package db
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -17,6 +20,9 @@ import (
 	"github.com/dankkom/windows-system-monitor/go/internal/config"
 	"github.com/dankkom/windows-system-monitor/go/internal/spool"
 )
+
+//go:embed schema.sql
+var embeddedSchema string
 
 var identifierRE = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
 
@@ -211,7 +217,153 @@ func (s *Store) EnsureSchema(ctx context.Context) error {
 		return err
 	}
 	if !exists {
-		return fmt.Errorf("schema monitor not found - run sql/schema.sql")
+		return fmt.Errorf("schema monitor not found - run sql/schema.sql or monitor-go --init")
+	}
+	return nil
+}
+
+// InitDatabase creates the target database if missing and applies the embedded schema.
+// It connects to the admin database (postgres) to create the DB, then to the target.
+func InitDatabase(ctx context.Context, cfg *config.Settings) error {
+	targetURL, err := cfg.RequireDatabaseURL()
+	if err != nil {
+		return err
+	}
+	pcfg, err := pgxpool.ParseConfig(targetURL)
+	if err != nil {
+		return fmt.Errorf("parse DATABASE_URL: %w", err)
+	}
+	targetDB := pcfg.ConnConfig.Database
+	if targetDB == "" {
+		targetDB = "postgres"
+	}
+	adminURL := adminDatabaseURL(targetURL, "postgres")
+	adminCfg, err := pgxpool.ParseConfig(adminURL)
+	if err != nil {
+		return fmt.Errorf("parse admin URL: %w", err)
+	}
+	adminCfg.ConnConfig.ConnectTimeout = cfg.ConnectTimeout
+	pool, err := pgxpool.NewWithConfig(ctx, adminCfg)
+	if err != nil {
+		return fmt.Errorf("admin connect: %w", err)
+	}
+	defer pool.Close()
+
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname=$1)`, targetDB).Scan(&exists); err != nil {
+		return fmt.Errorf("check database: %w", err)
+	}
+	if !exists {
+		// CREATE DATABASE cannot run in transaction, use Exec with quoted identifier
+		if !identifierRE.MatchString(targetDB) {
+			return fmt.Errorf("invalid database name: %s", targetDB)
+		}
+		if _, err := pool.Exec(ctx, fmt.Sprintf(`CREATE DATABASE "%s"`, targetDB)); err != nil {
+			return fmt.Errorf("create database %s: %w", targetDB, err)
+		}
+		log.Printf("created database %s", targetDB)
+	} else {
+		log.Printf("database %s exists", targetDB)
+	}
+
+	// Apply schema to target DB
+	targetCfg, err := pgxpool.ParseConfig(targetURL)
+	if err != nil {
+		return err
+	}
+	targetCfg.ConnConfig.ConnectTimeout = cfg.ConnectTimeout
+	tpool, err := pgxpool.NewWithConfig(ctx, targetCfg)
+	if err != nil {
+		return fmt.Errorf("target connect: %w", err)
+	}
+	defer tpool.Close()
+	if _, err := tpool.Exec(ctx, embeddedSchema); err != nil {
+		return fmt.Errorf("apply schema: %w", err)
+	}
+	log.Printf("schema applied to %s", targetDB)
+	return nil
+}
+
+func adminDatabaseURL(raw, adminDB string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	u.Path = "/" + adminDB
+	return u.String()
+}
+
+// retentionTargets returns the table -> interval map from config.
+func retentionTargets(cfg *config.Settings) map[string]string {
+	if cfg.Retention != nil {
+		return cfg.Retention
+	}
+	return map[string]string{}
+}
+
+// RunRetention deletes rows older than the configured intervals.
+// When dryRun is true it only counts that would be deleted (allowed even when disabled).
+func (s *Store) RunRetention(ctx context.Context, cfg *config.Settings, dryRun bool) (map[string]int64, error) {
+	if !cfg.EnableRetention && !dryRun {
+		return nil, fmt.Errorf("retention disabled (ENABLE_RETENTION=false)")
+	}
+	pool, err := s.poolRef(ctx)
+	if err != nil {
+		return nil, err
+	}
+	results := make(map[string]int64)
+	batch := cfg.RetentionBatch
+	if batch <= 0 {
+		batch = 50000
+	}
+	sleep := cfg.RetentionSleep
+	for table, interval := range retentionTargets(cfg) {
+		if strings.TrimSpace(interval) == "" {
+			continue
+		}
+		if err := validateTableOnly(table); err != nil {
+			log.Printf("retention skip invalid table %s: %v", table, err)
+			continue
+		}
+		if dryRun {
+			var cnt int64
+			if err := pool.QueryRow(ctx, fmt.Sprintf(`SELECT count(*) FROM %s WHERE ts < now() - $1::interval`, table), interval).Scan(&cnt); err != nil {
+				log.Printf("retention count failed %s: %v", table, err)
+				continue
+			}
+			results[table] = cnt
+			log.Printf("[DRY] %s interval %s -> would delete %d rows", table, interval, cnt)
+			continue
+		}
+		var total int64
+		for {
+			ct, err := pool.Exec(ctx, fmt.Sprintf(`DELETE FROM %s WHERE ts < now() - $1::interval AND ctid IN (SELECT ctid FROM %s WHERE ts < now() - $1::interval LIMIT $2)`, table, table), interval, batch)
+			if err != nil {
+				log.Printf("retention delete failed %s: %v", table, err)
+				break
+			}
+			n := ct.RowsAffected()
+			total += n
+			if n < int64(batch) {
+				break
+			}
+			if sleep > 0 {
+				time.Sleep(sleep)
+			}
+		}
+		results[table] = total
+		log.Printf("[DELETE] %s interval %s -> %d rows", table, interval, total)
+	}
+	return results, nil
+}
+
+func validateTableOnly(table string) error {
+	schema, name, ok := cutSchemaTable(table)
+	if !ok {
+		return fmt.Errorf("table must be schema.name: %s", table)
+	}
+	if !identifierRE.MatchString(schema) || !identifierRE.MatchString(name) {
+		return fmt.Errorf("invalid identifier: %s", table)
 	}
 	return nil
 }

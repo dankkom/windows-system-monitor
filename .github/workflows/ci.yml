@@ -5,11 +5,36 @@ on:
   pull_request:
 
 jobs:
-  test:
+  build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv sync --group dev --frozen
-      - run: uv run ruff check .
-      - run: uv run pytest -p no:cacheprovider
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: true
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Go vet
+        working-directory: go
+        run: go vet ./...
+      - name: Go build
+        working-directory: go
+        run: go build -o monitor-go.exe ./cmd/monitor
+      - name: Go test
+        working-directory: go
+        run: go test ./... -count=1
+      - name: Dotnet publish lhm-dump
+        run: dotnet publish go/lhm-dump/lhm-dump.csproj -c Release -o build/lhm-dump
+      - name: Verify --init dry (no DB) help
+        working-directory: go
+        run: .\monitor-go.exe --help
+      - name: Upload artifact (binary + helper)
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-monitor-windows-amd64
+          path: |
+            go/monitor-go.exe
+            build/lhm-dump/
+            sql/schema.sql

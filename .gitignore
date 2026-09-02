@@ -39,6 +39,11 @@ desktop.ini
 *.swp
 *~
 
+# Build / installer
+dist/
+build/
+*.exe~
+
 # Tools
 C:\tools\LibreHardwareMonitor.zip
 C:\tools\PawnIO_setup.exe

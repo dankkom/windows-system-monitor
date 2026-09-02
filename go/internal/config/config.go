@@ -29,6 +29,10 @@ type Settings struct {
 	TopProcesses       int
 	BufferPath         string
 	LogDir             string
+	EnableRetention    bool
+	Retention          map[string]string
+	RetentionBatch     int
+	RetentionSleep     time.Duration
 }
 
 // loadDotEnv applies KEY=VALUE pairs from path into the environment, skipping
@@ -187,6 +191,28 @@ func Load() *Settings {
 		"eventlog":       seconds("INTERVAL_EVENTLOG", 60),
 	}
 
+	enableRetention := parseBoolEnv("ENABLE_RETENTION", false)
+	retention := map[string]string{
+		"monitor.processes":   envOr("RETENTION_PROCESSES", "30 days"),
+		"monitor.connections": envOr("RETENTION_CONNECTIONS", "7 days"),
+		"monitor.sensors":     envOr("RETENTION_SENSORS", "90 days"),
+		"monitor.cpu":         envOr("RETENTION_CPU", "90 days"),
+		"monitor.memory":      envOr("RETENTION_MEMORY", "90 days"),
+		"monitor.gpu":         envOr("RETENTION_GPU", "90 days"),
+		"monitor.heartbeat":   envOr("RETENTION_HEARTBEAT", "30 days"),
+		"monitor.eventlog":    envOr("RETENTION_EVENTLOG", "30 days"),
+		"monitor.disk_io":     envOr("RETENTION_DISK_IO", "90 days"),
+		"monitor.net_io":      envOr("RETENTION_NET_IO", "90 days"),
+	}
+	batchLimit := positiveInt("RETENTION_BATCH_LIMIT", 50000)
+	batchSleepRaw := os.Getenv("RETENTION_BATCH_SLEEP")
+	batchSleep := 100 * time.Millisecond
+	if strings.TrimSpace(batchSleepRaw) != "" {
+		if f, err := strconv.ParseFloat(strings.TrimSpace(batchSleepRaw), 64); err == nil && f >= 0 {
+			batchSleep = time.Duration(f * float64(time.Second))
+		}
+	}
+
 	logDir := filepath.Join(base, "logs")
 	_ = os.MkdirAll(logDir, 0755)
 
@@ -215,9 +241,35 @@ func Load() *Settings {
 		TopProcesses:       positiveInt("TOP_PROCESSES", 50),
 		BufferPath:         filepath.Join(logDir, "pending_batches.sqlite3"),
 		LogDir:             logDir,
+		EnableRetention:    enableRetention,
+		Retention:          retention,
+		RetentionBatch:     batchLimit,
+		RetentionSleep:     batchSleep,
 	}
 }
 
 func seconds(name string, def int) time.Duration {
 	return time.Duration(positiveInt(name, def)) * time.Second
+}
+
+func parseBoolEnv(name string, def bool) bool {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return def
+	}
+	switch strings.ToLower(raw) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return def
+	}
+}
+
+func envOr(name, def string) string {
+	if v := strings.TrimSpace(os.Getenv(name)); v != "" {
+		return v
+	}
+	return def
 }

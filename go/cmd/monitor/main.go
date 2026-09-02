@@ -22,12 +22,15 @@ import (
 )
 
 func main() {
-	var once, dryRun, serveFlag, collectFlag bool
+	var once, dryRun, serveFlag, collectFlag, initFlag, retentionFlag, retentionDry bool
 	var intervalOverride int
 	flag.BoolVar(&once, "once", false, "roda uma coleta de cada e sai")
 	flag.BoolVar(&dryRun, "dry-run", false, "não insere no banco, só testa coletores")
 	flag.BoolVar(&serveFlag, "serve", false, "inicia apenas o dashboard")
 	flag.BoolVar(&collectFlag, "collect", false, "inicia apenas o coletor")
+	flag.BoolVar(&initFlag, "init", false, "cria database e aplica schema, depois sai")
+	flag.BoolVar(&retentionFlag, "retention", false, "executa retenção (DELETE) conforme .env")
+	flag.BoolVar(&retentionDry, "retention-dry-run", false, "simula retenção sem deletar")
 	flag.IntVar(&intervalOverride, "interval", 0, "override intervalo base (s) para teste")
 	flag.Parse()
 
@@ -48,6 +51,24 @@ func main() {
 	}
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Printf("starting hostname=%s dry_run=%v once=%v interval_override=%v", cfg.Hostname, dryRun, once, intervalOverride)
+
+	if initFlag {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := db.InitDatabase(ctx, cfg); err != nil {
+			log.Fatalf("init: %v", err)
+		}
+		log.Printf("init complete")
+		fmt.Println("init complete")
+		return
+	}
+	if retentionFlag || retentionDry {
+		dry := retentionDry || dryRun
+		if err := runRetention(cfg, dry); err != nil {
+			log.Fatalf("retention: %v", err)
+		}
+		return
+	}
 
 	if serveFlag && !collectFlag {
 		if err := runServe(cfg); err != nil {
@@ -332,6 +353,45 @@ func newPool(ctx context.Context, cfg *config.Settings) (*pgxpool.Pool, error) {
 	}
 	pcfg.ConnConfig.ConnectTimeout = cfg.ConnectTimeout
 	return pgxpool.NewWithConfig(ctx, pcfg)
+}
+
+func runRetention(cfg *config.Settings, dry bool) error {
+	if !cfg.EnableRetention && !dry {
+		msg := "retention disabled (ENABLE_RETENTION=false) - historico permanente"
+		log.Println(msg)
+		fmt.Println(msg)
+		return nil
+	}
+	store, err := db.New(cfg)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	if !cfg.EnableRetention && dry {
+		log.Printf("retention dry-run even though disabled - counting anyway")
+	}
+	results, err := store.RunRetention(ctx, cfg, dry)
+	if err != nil && !dry && !cfg.EnableRetention {
+		// already handled above, but db would return error
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var total int64
+	for _, n := range results {
+		total += n
+	}
+	if dry {
+		log.Printf("retention dry-run complete, total would delete: %d", total)
+		fmt.Printf("retention dry-run complete, total would delete: %d\n", total)
+	} else {
+		log.Printf("retention complete, total deleted: %d", total)
+		fmt.Printf("retention complete, total deleted: %d\n", total)
+	}
+	return nil
 }
 
 func stringsHasEmptyHost(h string) bool { return h == "" || h == "0.0.0.0" }
