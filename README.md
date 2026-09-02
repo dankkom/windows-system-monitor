@@ -1,6 +1,6 @@
 # System Monitor — Instalação em 5 minutos (Windows)
 
-Coleta contínua de telemetria do seu PC Windows e envia para um **PostgreSQL** (local ou central) + dashboard em `http://localhost:8501`. Um único `monitor-go.exe` (~15 MB), sem Python, sem Docker. Ideal para deixar rodando no boot e esquecer.
+Coleta contínua de telemetria do seu PC Windows e envia para um **PostgreSQL** (local ou central) + dashboard em `http://localhost:8501`. Um único `monitor-go.exe`. Ideal para deixar rodando no boot e esquecer.
 
 > **Você só quer instalar?** Vá direto para [Instalação rápida](#instalação-rápida). O resto é detalhe.
 
@@ -9,11 +9,13 @@ Coleta contínua de telemetria do seu PC Windows e envia para um **PostgreSQL** 
 ## Instalação rápida
 
 ### 1. Baixe o instalador
+
 Em [**Releases**](https://github.com/dankkom/windows-system-monitor/releases) baixe `system-monitor-*-setup.exe` (ou use o `*-windows-amd64.zip` portátil).
 
 > Alternativa sem instalador: `powershell -ExecutionPolicy Bypass -File installer/install.ps1` direto do repositório clonado (faz build local e **pergunta** os mesmos dados de banco interativamente — também gera `config.toml` e pode instalar PG/opcionais).
 
 ### 2. Execute como Administrador
+
 Duplo-clique no `setup.exe` **como Administrador** → assistente em português:
 
 1. **Banco de dados** — informe `Host` (ex: `localhost` ou `192.168.1.10`), `Porta` (5432), `Usuário` (`postgres`), **Senha** e `Banco` (`system_monitor`). O instalador gera `config.toml` automaticamente (senha em texto plano em `config.toml`).
@@ -21,6 +23,7 @@ Duplo-clique no `setup.exe` **como Administrador** → assistente em português:
 3. **Opcionais** — marque *smartmontools* (para SMART) e *PawnIO* (para 309 sensores) se quiser — também instalados via `winget`/`choco`.
 
 O instalador então:
+
 - copia `monitor-go.exe` + `lhm-dump.exe` (sensores) para `C:\Program Files\system-monitor`
 - grava `C:\Program Files\system-monitor\config.toml` com o `DATABASE_URL` que você informou
 - instala PostgreSQL (se marcado e ausente) e opcionais
@@ -28,6 +31,7 @@ O instalador então:
 - registra 3 tarefas no boot (SYSTEM): `SystemMonitor-Go` (coletor), `SystemMonitor-Go-Dashboard` (dashboard) e `SystemMonitor-Go-Retention` (limpeza, só se ativada)
 
 ### 4. Confira se está coletando
+
 ```powershell
 Get-Content "C:\Program Files\system-monitor\logs\monitor-go.log" -Tail 20
 # deve mostrar: [sensors] 309 rows -> monitor.sensors ... stored  (ou 143 sem PawnIO)
@@ -60,6 +64,7 @@ Sem esses opcionais o agente ainda sobe — as tabelas correspondentes ficam com
 ## Passo a passo detalhado
 
 ### Opção A — Instalador (recomendado)
+
 1. Baixe `system-monitor-*-setup.exe` em Releases.
 2. Clique direito → **Executar como administrador** → wizard pede `Host/Porta/Usuário/Senha/Banco` e se deve instalar PostgreSQL/opcionais → Avançar.
 3. O instalador já gera `config.toml` e roda `--init`. Confira `http://localhost:8501`.
@@ -68,6 +73,7 @@ Sem esses opcionais o agente ainda sobe — as tabelas correspondentes ficam com
 **Desinstalar:** Painel de Controle → Programas → System Monitor → Desinstalar (remove as 3 tarefas).
 
 ### Opção B — `install.ps1` (sem gerar `setup.exe`)
+
 Para quem clonou o repo e quer instalar direto sem Inno Setup (pergunta interativa e gera `config.toml`):
 
 ```powershell
@@ -79,6 +85,7 @@ powershell -ExecutionPolicy Bypass -File installer/install.ps1
 ```
 
 ### Opção C — Manual / portátil (sem admin, sem tarefas)
+
 Útil para testar sem instalar:
 
 ```powershell
