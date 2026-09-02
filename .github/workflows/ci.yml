@@ -21,7 +21,7 @@ jobs:
         run: go vet ./...
       - name: Go build
         working-directory: go
-        run: go build -o monitor-go.exe ./cmd/monitor
+        run: go build -o system-monitor.exe ./cmd/monitor
       - name: Go test
         working-directory: go
         run: go test ./... -count=1
@@ -29,12 +29,12 @@ jobs:
         run: dotnet publish go/lhm-dump/lhm-dump.csproj -c Release -o build/lhm-dump
       - name: Verify --init dry (no DB) help
         working-directory: go
-        run: .\monitor-go.exe --help
+        run: .\system-monitor.exe --help
       - name: Upload artifact (binary + helper)
         uses: actions/upload-artifact@v4
         with:
           name: system-monitor-windows-amd64
           path: |
-            go/monitor-go.exe
+            go/system-monitor.exe
             build/lhm-dump/
             sql/schema.sql

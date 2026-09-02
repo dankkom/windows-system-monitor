@@ -67,10 +67,10 @@ if (-not $PSBoundParameters.ContainsKey('InstallPostgres') -and -not $NonInterac
     if ($ans -match "^[nN]") { $InstallPostgres = $false } else { $InstallPostgres = $true }
 }
 
-$GoSrc = Join-Path $Root "go\monitor-go.exe"
+$GoSrc = Join-Path $Root "go\system-monitor.exe"
 $LhmSrcDir = Join-Path $Root "build\lhm-dump"
 if (-not $SkipBuild) {
-    Write-Host "Building monitor-go.exe..." -ForegroundColor Cyan
+    Write-Host "Building system-monitor.exe..." -ForegroundColor Cyan
     $goBin = "C:\Program Files\Go\bin\go.exe"; if (-not (Test-Path $goBin)) { $goBin = "go" }
     & $goBin build -o $GoSrc ./go/cmd/monitor
     if ($LASTEXITCODE -ne 0) { throw "go build falhou" }
@@ -80,7 +80,7 @@ if (-not $SkipBuild) {
 }
 
 New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-Copy-Item $GoSrc (Join-Path $InstallDir "monitor-go.exe") -Force
+Copy-Item $GoSrc (Join-Path $InstallDir "system-monitor.exe") -Force
 if (Test-Path $LhmSrcDir) {
     Copy-Item (Join-Path $LhmSrcDir "lhm-dump.exe") $InstallDir -Force -ErrorAction SilentlyContinue
     Copy-Item (Join-Path $LhmSrcDir "*.dll") $InstallDir -Force -ErrorAction SilentlyContinue
@@ -179,13 +179,13 @@ if ($WithSmartTools -or $WithPawnIO) {
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $InstallDir "install_optional.ps1") @args 2>&1 | Write-Host
 }
 
-Write-Host "Aplicando schema (monitor-go --init)..." -ForegroundColor Cyan
-& (Join-Path $InstallDir "monitor-go.exe") --init 2>&1 | Out-String | Write-Host
+Write-Host "Aplicando schema (system-monitor --init)..." -ForegroundColor Cyan
+& (Join-Path $InstallDir "system-monitor.exe") --init 2>&1 | Out-String | Write-Host
 if ($LASTEXITCODE -ne 0) { Write-Warning "init falhou - verifique config.toml DATABASE_URL e se PostgreSQL está rodando" }
 
 Write-Host "Registrando tarefas SYSTEM..." -ForegroundColor Cyan
 & (Join-Path $InstallDir "install_tasks_go.ps1")
 & (Join-Path $InstallDir "install_retention_go.ps1") 2>&1 | Write-Host
 Write-Host "Instalação concluída em $InstallDir" -ForegroundColor Green
-Write-Host "Dashboard: http://localhost:8501  (SystemMonitor-Go / SystemMonitor-Go-Dashboard)"
+Write-Host "Dashboard: http://localhost:8501  (SystemMonitor / SystemMonitor-Dashboard)"
 Write-Host "Config: $configPath  (senha em texto plano)"

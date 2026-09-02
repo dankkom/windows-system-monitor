@@ -1,6 +1,6 @@
 # System Monitor — Instalação em 5 minutos (Windows)
 
-Coleta contínua de telemetria do seu PC Windows e envia para um **PostgreSQL** (local ou central) + dashboard em `http://localhost:8501`. Um único `monitor-go.exe`. Ideal para deixar rodando no boot e esquecer.
+Coleta contínua de telemetria do seu PC Windows e envia para um **PostgreSQL** (local ou central) + dashboard em `http://localhost:8501`. Um único `system-monitor.exe`. Ideal para deixar rodando no boot e esquecer.
 
 > **Você só quer instalar?** Vá direto para [Instalação rápida](#instalação-rápida). O resto é detalhe.
 
@@ -24,22 +24,22 @@ Duplo-clique no `setup.exe` **como Administrador** → assistente em português:
 
 O instalador então:
 
-- copia `monitor-go.exe` + `lhm-dump.exe` (sensores) para `C:\Program Files\system-monitor`
+- copia `system-monitor.exe` + `lhm-dump.exe` (sensores) para `C:\Program Files\system-monitor`
 - grava `C:\Program Files\system-monitor\config.toml` com o `DATABASE_URL` que você informou
 - instala PostgreSQL (se marcado e ausente) e opcionais
-- roda `monitor-go --init` (cria o banco `system_monitor` + 16 tabelas) — **sem precisar editar `.env` manualmente**
-- registra 3 tarefas no boot (SYSTEM): `SystemMonitor-Go` (coletor), `SystemMonitor-Go-Dashboard` (dashboard) e `SystemMonitor-Go-Retention` (limpeza, só se ativada)
+- roda `system-monitor --init` (cria o banco `system_monitor` + 16 tabelas) — **sem precisar editar `.env` manualmente**
+- registra 3 tarefas no boot (SYSTEM): `SystemMonitor` (coletor), `SystemMonitor-Dashboard` (dashboard) e `SystemMonitor-Retention` (limpeza, só se ativada)
 
 ### 4. Confira se está coletando
 
 ```powershell
-Get-Content "C:\Program Files\system-monitor\logs\monitor-go.log" -Tail 20
+Get-Content "C:\Program Files\system-monitor\logs\system-monitor.log" -Tail 20
 # deve mostrar: [sensors] 309 rows -> monitor.sensors ... stored  (ou 143 sem PawnIO)
 Invoke-WebRequest http://localhost:8501/api/health -UseBasicParsing
 # StatusCode 200 = dashboard ok
 ```
 
-Abra **http://localhost:8501** no navegador. Pronto — coleta já está no boot e sobrevive a reinícios. Logs em `logs/monitor-go.log`; se o banco cair, os dados ficam em `pending_batches.sqlite3` e são reenviados.
+Abra **http://localhost:8501** no navegador. Pronto — coleta já está no boot e sobrevive a reinícios. Logs em `logs/system-monitor.log`; se o banco cair, os dados ficam em `pending_batches.sqlite3` e são reenviados.
 
 ---
 
@@ -68,7 +68,7 @@ Sem esses opcionais o agente ainda sobe — as tabelas correspondentes ficam com
 1. Baixe `system-monitor-*-setup.exe` em Releases.
 2. Clique direito → **Executar como administrador** → wizard pede `Host/Porta/Usuário/Senha/Banco` e se deve instalar PostgreSQL/opcionais → Avançar.
 3. O instalador já gera `config.toml` e roda `--init`. Confira `http://localhost:8501`.
-4. Se precisar corrigir, edite `C:\Program Files\system-monitor\config.toml` (`[db] url`) e rode `& "C:\Program Files\system-monitor\monitor-go.exe" --init`.
+4. Se precisar corrigir, edite `C:\Program Files\system-monitor\config.toml` (`[db] url`) e rode `& "C:\Program Files\system-monitor\system-monitor.exe" --init`.
 
 **Desinstalar:** Painel de Controle → Programas → System Monitor → Desinstalar (remove as 3 tarefas).
 
@@ -91,13 +91,13 @@ powershell -ExecutionPolicy Bypass -File installer/install.ps1
 ```powershell
 copy config.toml.example config.toml
 # edite [db] url  (ou defina env var DATABASE_URL)
-.\go\monitor-go.exe --init
-.\go\monitor-go.exe --dry-run   # testa coletores sem gravar
-.\go\monitor-go.exe --once      # uma coleta completa
-.\go\monitor-go.exe --serve     # só dashboard em http://localhost:8501
+.\go\system-monitor.exe --init
+.\go\system-monitor.exe --dry-run   # testa coletores sem gravar
+.\go\system-monitor.exe --once      # uma coleta completa
+.\go\system-monitor.exe --serve     # só dashboard em http://localhost:8501
 ```
 
-Para rodar coleta + dashboard juntos manualmente: `.\go\monitor-go.exe --collect --serve`.
+Para rodar coleta + dashboard juntos manualmente: `.\go\system-monitor.exe --collect --serve`.
 
 ---
 
@@ -105,13 +105,13 @@ Para rodar coleta + dashboard juntos manualmente: `.\go\monitor-go.exe --collect
 
 - URL: **http://localhost:8501** (ou `http://SEU_HOST:8501` se mudou `[dashboard] host/port` em `config.toml` ou env `DASHBOARD_HOST/PORT`)
 - Health: `/api/health` (200), `/api/ready`, `/api/status` (pendências do spool)
-- Se não abrir, veja `logs/monitor-go.log` e `Get-ScheduledTask SystemMonitor-Go* | Get-ScheduledTaskInfo`.
+- Se não abrir, veja `logs/system-monitor.log` e `Get-ScheduledTask SystemMonitor* | Get-ScheduledTaskInfo`.
 
 ---
 
 ## Configuração (config.toml)
 
-Tudo via **`config.toml`** ao lado do `monitor-go.exe` (ou `C:\Program Files\system-monitor\config.toml` quando instalado). O instalador gera este arquivo automaticamente — **não precisa criar `.env` manualmente** (`.env` ainda é lido por compatibilidade, mas `config.toml` tem precedência). Só `db.url` é obrigatório.
+Tudo via **`config.toml`** ao lado do `system-monitor.exe` (ou `C:\Program Files\system-monitor\config.toml` quando instalado). O instalador gera este arquivo automaticamente — **não precisa criar `.env` manualmente** (`.env` ainda é lido por compatibilidade, mas `config.toml` tem precedência). Só `db.url` é obrigatório.
 
 ```toml
 [db]
@@ -135,7 +135,7 @@ enabled = false
 aux_baseline_w = 24
 ```
 
-Env vars ainda têm precedência (`DATABASE_URL`, `INTERVAL_CPU`, `RETENTION_*`, `DASHBOARD_PORT` etc.), útil para CI/docker. Após mudar `config.toml`, reinicie as tarefas. Teste retenção sem apagar: `monitor-go --retention-dry-run`. Senha fica em texto plano em `config.toml` (decisão de UX).
+Env vars ainda têm precedência (`DATABASE_URL`, `INTERVAL_CPU`, `RETENTION_*`, `DASHBOARD_PORT` etc.), útil para CI/docker. Após mudar `config.toml`, reinicie as tarefas. Teste retenção sem apagar: `system-monitor --retention-dry-run`. Senha fica em texto plano em `config.toml` (decisão de UX).
 
 ---
 
@@ -143,18 +143,18 @@ Env vars ainda têm precedência (`DATABASE_URL`, `INTERVAL_CPU`, `RETENTION_*`,
 
 ```powershell
 # logs
-Get-Content "C:\Program Files\system-monitor\logs\monitor-go.log" -Tail 50
+Get-Content "C:\Program Files\system-monitor\logs\system-monitor.log" -Tail 50
 
 # pausar/retomar
-Stop-ScheduledTask -TaskName SystemMonitor-Go, SystemMonitor-Go-Dashboard
-Start-ScheduledTask -TaskName SystemMonitor-Go; Start-ScheduledTask -TaskName SystemMonitor-Go-Dashboard
+Stop-ScheduledTask -TaskName SystemMonitor, SystemMonitor-Dashboard
+Start-ScheduledTask -TaskName SystemMonitor; Start-ScheduledTask -TaskName SystemMonitor-Dashboard
 
 # checar último heartbeat com falha
 psql -U postgres -h HOST -d system_monitor -c "SELECT * FROM monitor.v_last_heartbeat WHERE success=false;"
 
 # testar retenção
-& "C:\Program Files\system-monitor\monitor-go.exe" --retention-dry-run
-& "C:\Program Files\system-monitor\monitor-go.exe" --retention  # só se ENABLE_RETENTION=true
+& "C:\Program Files\system-monitor\system-monitor.exe" --retention-dry-run
+& "C:\Program Files\system-monitor\system-monitor.exe" --retention  # só se ENABLE_RETENTION=true
 ```
 
 ---
@@ -190,10 +190,10 @@ Dashboard calcula agregações com `lag()`/`dt`, bucket `to_timestamp(floor(epoc
 
 | Sintoma | Causa provável | O que fazer |
 |---|---|---|
-| `monitor-go --init` falha | PG offline ou `DATABASE_URL` errada | `Test-NetConnection HOST -Port 5432`; `Get-Service postgresql*`; confira senha em `config.toml` (`[db] url`) |
-| `sensors` só 1 linha `no_sensor` | `lhm-dump.exe` não encontrado ou sem SYSTEM/PawnIO | Ao instalar, `lhm-dump.exe` fica ao lado de `monitor-go.exe`. Para 309 sensores, instale PawnIO e rode como SYSTEM (instalador já faz) |
+| `system-monitor --init` falha | PG offline ou `DATABASE_URL` errada | `Test-NetConnection HOST -Port 5432`; `Get-Service postgresql*`; confira senha em `config.toml` (`[db] url`) |
+| `sensors` só 1 linha `no_sensor` | `lhm-dump.exe` não encontrado ou sem SYSTEM/PawnIO | Ao instalar, `lhm-dump.exe` fica ao lado de `system-monitor.exe`. Para 309 sensores, instale PawnIO e rode como SYSTEM (instalador já faz) |
 | `disk_smart` vazio | `smartctl` não instalado | Instale [smartmontools](https://www.smartmontools.org/) ou deixe vazio — degrade gracioso |
-| Dashboard não abre | Tarefa `SystemMonitor-Go-Dashboard` não iniciou | `Get-ScheduledTask SystemMonitor-Go-Dashboard | Get-ScheduledTaskInfo` → `LastTaskResult`; `Get-Content logs/monitor-go.log -Tail 30` |
+| Dashboard não abre | Tarefa `SystemMonitor-Dashboard` não iniciou | `Get-ScheduledTask SystemMonitor-Dashboard | Get-ScheduledTaskInfo` → `LastTaskResult`; `Get-Content logs/system-monitor.log -Tail 30` |
 | `Task LastTaskResult 1` | Instalador não rodou como admin | Reinstale clicando direito → Executar como administrador |
 
 ---
@@ -204,9 +204,9 @@ Dashboard calcula agregações com `lag()`/`dt`, bucket `to_timestamp(floor(epoc
 ### Build local
 
 ```powershell
-go build -o go/monitor-go.exe ./go/cmd/monitor          # CGO_ENABLED=0, ~15 MB
+go build -o go/system-monitor.exe ./go/cmd/monitor          # CGO_ENABLED=0, ~15 MB
 dotnet publish go/lhm-dump/lhm-dump.csproj -c Release -o build/lhm-dump
-.\go\monitor-go.exe --dry-run; .\go\monitor-go.exe --once; Get-Content logs/monitor-go.log -Tail 20
+.\go\system-monitor.exe --dry-run; .\go\system-monitor.exe --once; Get-Content logs/system-monitor.log -Tail 20
 ```
 
 ### Arquitetura
@@ -224,7 +224,7 @@ config.toml.example         # exemplo (gerado pelo instalador)
 sql/schema.sql              # 16 tabelas (copiado em go/internal/db/schema.sql para embed)
 ```
 
-Fluxo: `monitor-go` loop 1s tick (`services`/`processes` em goroutines) → `collectors` → `db.Store.InsertBatch` (`CopyFrom`) → `heartbeat` → `logs/monitor-go.log`. Dashboard serve `go/internal/dashboard`. Spool `pending_batches.sqlite3` bufferiza quando PG cai.
+Fluxo: `system-monitor` loop 1s tick (`services`/`processes` em goroutines) → `collectors` → `db.Store.InsertBatch` (`CopyFrom`) → `heartbeat` → `logs/system-monitor.log`. Dashboard serve `go/internal/dashboard`. Spool `pending_batches.sqlite3` bufferiza quando PG cai.
 
 ### CI/Release
 

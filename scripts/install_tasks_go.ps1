@@ -4,9 +4,9 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $isAdmin = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) { throw "Execute este script como Administrador." }
 
-$GoExe = Join-Path $Root "go\monitor-go.exe"
+$GoExe = Join-Path $Root "go\system-monitor.exe"
 if (-not (Test-Path $GoExe)) {
-    Write-Host "Compilando monitor-go.exe..." -ForegroundColor Cyan
+    Write-Host "Compilando system-monitor.exe..." -ForegroundColor Cyan
     $goBin = "C:\Program Files\Go\bin\go.exe"
     if (-not (Test-Path $goBin)) { $goBin = "go" }
     & $goBin build -o $GoExe ./go/cmd/monitor
@@ -33,11 +33,11 @@ $dashboardAction = New-ScheduledTaskAction -Execute $GoExe -Argument "--serve" -
     if ($existing -and $existing.State -eq "Running") { Stop-ScheduledTask -TaskName $_ }
 }
 
-# Registra com nomes Go para coexistir ou substituir; use Force para sobrescrever os antigos se desejar
-Register-ScheduledTask -TaskName "SystemMonitor-Go" -Action $monitorAction -Trigger $trigger -Settings $settings -Principal $principal -Description "Coleta de telemetria Go no boot" -Force | Out-Null
-Register-ScheduledTask -TaskName "SystemMonitor-Go-Dashboard" -Action $dashboardAction -Trigger $trigger -Settings $settings -Principal $principal -Description "Dashboard Go no boot" -Force | Out-Null
+# Registra com nomes novos (SystemMonitor); mantém limpeza de antigos Go para migração
+Register-ScheduledTask -TaskName "SystemMonitor" -Action $monitorAction -Trigger $trigger -Settings $settings -Principal $principal -Description "Coleta de telemetria no boot" -Force | Out-Null
+Register-ScheduledTask -TaskName "SystemMonitor-Dashboard" -Action $dashboardAction -Trigger $trigger -Settings $settings -Principal $principal -Description "Dashboard no boot" -Force | Out-Null
 
-Start-ScheduledTask -TaskName "SystemMonitor-Go"
-Start-ScheduledTask -TaskName "SystemMonitor-Go-Dashboard"
-Write-Host "Tarefas SystemMonitor-Go e SystemMonitor-Go-Dashboard registradas e iniciadas." -ForegroundColor Green
-Write-Host "As tarefas Python antigas (SystemMonitor/SystemMonitor-Dashboard) foram mantidas; desative-as manualmente se a migracao estiver estavel."
+Start-ScheduledTask -TaskName "SystemMonitor"
+Start-ScheduledTask -TaskName "SystemMonitor-Dashboard"
+Write-Host "Tarefas SystemMonitor e SystemMonitor-Dashboard registradas e iniciadas." -ForegroundColor Green
+Write-Host "Tarefas antigas SystemMonitor-Go/SystemMonitor-Go-Dashboard foram removidas se existiam."

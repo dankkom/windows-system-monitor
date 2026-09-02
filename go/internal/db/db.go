@@ -217,7 +217,7 @@ func (s *Store) EnsureSchema(ctx context.Context) error {
 		return err
 	}
 	if !exists {
-		return fmt.Errorf("schema monitor not found - run sql/schema.sql or monitor-go --init")
+		return fmt.Errorf("schema monitor not found - run sql/schema.sql or system-monitor --init")
 	}
 	return nil
 }

@@ -29,7 +29,7 @@ func main() {
 	flag.BoolVar(&serveFlag, "serve", false, "inicia apenas o dashboard")
 	flag.BoolVar(&collectFlag, "collect", false, "inicia apenas o coletor")
 	flag.BoolVar(&initFlag, "init", false, "cria database e aplica schema, depois sai")
-	flag.BoolVar(&retentionFlag, "retention", false, "executa retenção (DELETE) conforme .env")
+	flag.BoolVar(&retentionFlag, "retention", false, "executa retenção (DELETE) conforme config")
 	flag.BoolVar(&retentionDry, "retention-dry-run", false, "simula retenção sem deletar")
 	flag.IntVar(&intervalOverride, "interval", 0, "override intervalo base (s) para teste")
 	flag.Parse()
@@ -44,7 +44,7 @@ func main() {
 	// file log setup
 	logDir := cfg.LogDir
 	_ = os.MkdirAll(logDir, 0755)
-	logFile, _ := os.OpenFile(logDir+"/monitor-go.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	logFile, _ := os.OpenFile(logDir+"/system-monitor.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if logFile != nil {
 		defer logFile.Close()
 		log.SetOutput(logFile)

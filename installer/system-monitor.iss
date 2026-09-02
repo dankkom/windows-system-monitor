@@ -23,7 +23,7 @@ WizardStyle=modern
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=commandline
 ArchitecturesInstallIn64BitMode=x64
-UninstallDisplayIcon={app}\monitor-go.exe
+UninstallDisplayIcon={app}\system-monitor.exe
 
 [Languages]
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
@@ -33,8 +33,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; Binario Go (build antes: go build -o go/monitor-go.exe ./go/cmd/monitor)
-Source: "..\go\monitor-go.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Binario Go (build antes: go build -o go/system-monitor.exe ./go/cmd/monitor)
+Source: "..\go\system-monitor.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; Helper LHM (build antes: dotnet publish go/lhm-dump -c Release -o build\lhm-dump)
 Source: "..\build\lhm-dump\lhm-dump.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\build\lhm-dump\*.dll"; DestDir: "{app}"; Flags: ignoreversion
@@ -57,12 +57,12 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 
 [Run]
 ; Opcionais e Postgres sao tratados em [Code] CurStepChanged; aqui so fallback se Code nao rodou
-Filename: "{app}\monitor-go.exe"; Parameters: "--init"; WorkingDir: "{app}"; Flags: runhidden; StatusMsg: "Inicializando banco de dados..."
+Filename: "{app}\system-monitor.exe"; Parameters: "--init"; WorkingDir: "{app}"; Flags: runhidden; StatusMsg: "Inicializando banco de dados..."
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install_tasks_go.ps1"""; Flags: runhidden; StatusMsg: "Registrando tarefas agendadas..."
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install_retention_go.ps1"""; Flags: runhidden
 
 [UninstallRun]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Unregister-ScheduledTask -TaskName 'SystemMonitor-Go' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Go-Dashboard' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Go-Retention' -Confirm:$false -ErrorAction SilentlyContinue"""; Flags: runhidden
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Unregister-ScheduledTask -TaskName 'SystemMonitor' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Dashboard' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Retention' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Go' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Go-Dashboard' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Go-Retention' -Confirm:$false -ErrorAction SilentlyContinue"""; Flags: runhidden
 
 [Code]
 var
@@ -265,6 +265,6 @@ begin
     end;
 
     { Roda --init com o config.toml recém-gerado (pode falhar se PG ainda subindo, Run fallback tenta de novo) }
-    Exec(ExpandConstant('{app}\monitor-go.exe'), '--init', ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec(ExpandConstant('{app}\system-monitor.exe'), '--init', ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;

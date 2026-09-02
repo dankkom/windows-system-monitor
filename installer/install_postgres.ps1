@@ -69,7 +69,7 @@ if (-not $installed) {
 }
 
 if (-not (Test-PostgresInstalled)) {
-    Write-Warning "PostgreSQL não pôde ser instalado automaticamente. Instale manualmente: https://www.postgresql.org/download/windows/ e depois rode monitor-go --init"
+    Write-Warning "PostgreSQL não pôde ser instalado automaticamente. Instale manualmente: https://www.postgresql.org/download/windows/ e depois rode system-monitor --init"
     exit 1
 }
 

@@ -25,14 +25,14 @@ jobs:
           CGO_ENABLED: '0'
           GOOS: windows
           GOARCH: amd64
-        run: go build -trimpath -ldflags "-s -w" -o monitor-go.exe ./cmd/monitor
+        run: go build -trimpath -ldflags "-s -w" -o system-monitor.exe ./cmd/monitor
       - name: Publish lhm-dump
         run: dotnet publish go/lhm-dump/lhm-dump.csproj -c Release -o build/lhm-dump
       - name: Zip portable
         run: |
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           $zip = "dist/system-monitor-${{ github.ref_name }}-windows-amd64.zip"
-          Compress-Archive -Path go/monitor-go.exe, build/lhm-dump/*, sql/schema.sql, .env.example, README.md -DestinationPath $zip -Force
+          Compress-Archive -Path go/system-monitor.exe, build/lhm-dump/*, sql/schema.sql, .env.example, README.md -DestinationPath $zip -Force
           Get-ChildItem dist
       - name: Build Inno Setup installer
         run: |
