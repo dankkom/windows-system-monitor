@@ -15,7 +15,7 @@ Coleta **contínua e máxima** de telemetria do PC Windows (AMD Ryzen 7 5700X + 
 | **Rede IO** | `monitor.net_io` | 10s | `gopsutil/net` | por iface → bytes/packets sent/recv, err/drop, speed, throughput |
 | **Rede addrs** | `monitor.net_addr` | 60s | `gopsutil/net` | iface, family, address, netmask, broadcast |
 | **GPU** | `monitor.gpu` | 10s | `nvidia-smi` | util %, mem total/used/free, temp, power, fan, clocks, PCIe |
-| **Sensores** | `monitor.sensors` | 15s | `lhm-dump` (LHM via Python helper) | **309 sensores** quando elevado: CPU `Tctl`/`CCD1`, `SuperIO Nuvoton`, GPU, Storage, fans/voltages |
+| **Sensores** | `monitor.sensors` | 15s | `lhm-dump.exe` (LHM .NET Framework 4.7.2) | **309 sensores** quando elevado: CPU `Tctl`/`CCD1`, `SuperIO Nuvoton`, GPU, Storage, fans/voltages |
 | **Processos** | `monitor.processes` | 30s | `gopsutil/process` | top 50 por CPU+mem → pid/ppid, name, exe, cmdline, user, cpu/mem %, rss/vms, threads, io |
 | **Conexões** | `monitor.connections` | 30s | `gopsutil/net` | TCP/UDP → laddr/raddr ip:port, status, pid |
 | **Serviços** | `monitor.services` | 60s | `WMI Win32_Service` (`StackExchange/wmi`) | name, display, status, start_type, pid |
@@ -23,7 +23,7 @@ Coleta **contínua e máxima** de telemetria do PC Windows (AMD Ryzen 7 5700X + 
 | **EventLog** | `monitor.eventlog` | 60s | `wevtutil` | System/Application → Error/Warning/Info, event_id, provider, count |
 | **Heartbeat** | `monitor.heartbeat` | por coleta | interno | collector, duration_ms, rows, success, error + view `v_last_heartbeat` |
 
-**Dependências externas:** `C:\tools\LibreHardwareMonitor` (v0.9.6) + `PawnIO 2.2.0` (SuperIO); `smartmontools 7.5` (`smartctl.exe`); `Go 1.27+` para build; `.NET SDK 8` apenas para compilar `lhm-dump` (opcional – fallback Python em `.venv`).
+**Dependências externas:** `C:\tools\LibreHardwareMonitor` (v0.9.6) + `PawnIO 2.2.0` (SuperIO); `smartmontools 7.5` (`smartctl.exe`); `Go 1.27+` para build; `.NET Framework 4.7.2` (runtime para `lhm-dump.exe`, SDK 8 apenas para compilar helper).
 
 ## Arquitetura
 
@@ -61,9 +61,6 @@ C:\scripts\system-monitor/
 # 1. Build
 cd C:\scripts\system-monitor\go
 go build -o monitor-go.exe ./cmd/monitor
-# helper LHM Python (fallback, usa .venv existente):
-# .venv já contém pythonnet; helper em go/lhm-dump/lhm-dump.py
-# opcional: compilar helper .NET Framework (requer .NET SDK 8 + targeting pack net472)
 dotnet publish go/lhm-dump/lhm-dump.csproj -c Release -o C:\tools\lhm-dump
 
 # 2. Configurar .env (copiar de .env.example se não existe)
@@ -97,13 +94,13 @@ Start-ScheduledTask -TaskName SystemMonitor-Go
 
 ## Dashboard / Energia
 
-Mesmas agregações do Python: bucket `to_timestamp(floor(epoch/bucket)*bucket)`, `disk_io`/`net` com `lag()` + `dt`/`max_gap`, potência `estimated = (CPU Package + GPU + POWER_AUX_BASELINE_W) / POWER_PSU_EFFICIENCY` com `POWER_GPU_IDLE_W`/`MAX_W` modelo linear, integração trapezoidal Wh/kWh, qualidade `partial`/`estimated_default`/`estimated_calibrated`.
+Agregações: bucket `to_timestamp(floor(epoch/bucket)*bucket)`, `disk_io`/`net` com `lag()` + `dt`/`max_gap`, potência `estimated = (CPU Package + GPU + POWER_AUX_BASELINE_W) / POWER_PSU_EFFICIENCY` com `POWER_GPU_IDLE_W`/`MAX_W` modelo linear, integração trapezoidal Wh/kWh, qualidade `partial`/`estimated_default`/`estimated_calibrated`.
 
 ## Troubleshooting
 
 | Sintoma | Causa | Solução |
 |---|---|---|
-| `sensors` 1 linha `no_sensor` | helper não encontrado/sem elevação | `go/lhm-dump/lhm-dump.py` requer `.venv` + `LibreHardwareMonitorLib.dll`; para 309 sensores rode como SYSTEM (`install_tasks_go.ps1`) |
+| `sensors` 1 linha `no_sensor` | helper não encontrado/sem elevação | `C:\tools\lhm-dump\lhm-dump.exe` ausente ou sem SYSTEM/PAWNIO; recompile com `dotnet publish` e rode como SYSTEM |
 | `disk_smart` vazio | `smartctl` ausente | `C:\Program Files\smartmontools\bin\smartctl.exe` |
 | `eventlog` buffered | wevtutil cp1252 | corrigido via `charmap.Windows1252` + NUL strip |
 | `Task LastTaskResult 1` | SYSTEM sem permissão | `install_tasks_go.ps1` como admin |

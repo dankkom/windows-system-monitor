@@ -5,7 +5,7 @@ go/lhm-dump/bin/
 go/lhm-dump/obj/
 go/logs/
 
-# Python (legado - removido, mantido para helper LHM opcional)
+# Python (removido)
 __pycache__/
 *.py[cod]
 *$py.class
