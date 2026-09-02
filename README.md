@@ -27,7 +27,7 @@ O instalador então:
 - copia `system-monitor.exe` + `lhm-dump.exe` (sensores) para `C:\Program Files\system-monitor`
 - grava `C:\Program Files\system-monitor\config.toml` com o `DATABASE_URL` que você informou
 - instala PostgreSQL (se marcado e ausente) e opcionais
-- roda `system-monitor --init` (cria o banco `system_monitor` + 16 tabelas) — **sem precisar editar `.env` manualmente**
+- roda `system-monitor --init` (cria o banco `system_monitor` + 16 tabelas)
 - registra 3 tarefas no boot (SYSTEM): `SystemMonitor` (coletor), `SystemMonitor-Dashboard` (dashboard) e `SystemMonitor-Retention` (limpeza, só se ativada)
 
 ### 4. Confira se está coletando
@@ -111,7 +111,7 @@ Para rodar coleta + dashboard juntos manualmente: `.\go\system-monitor.exe --col
 
 ## Configuração (config.toml)
 
-Tudo via **`config.toml`** ao lado do `system-monitor.exe` (ou `C:\Program Files\system-monitor\config.toml` quando instalado). O instalador gera este arquivo automaticamente — **não precisa criar `.env` manualmente** (`.env` ainda é lido por compatibilidade, mas `config.toml` tem precedência). Só `db.url` é obrigatório.
+Tudo via **`config.toml`** ao lado do `system-monitor.exe` (ou `C:\Program Files\system-monitor\config.toml` quando instalado). O instalador gera este arquivo automaticamente. Só `db.url` é obrigatório.
 
 ```toml
 [db]

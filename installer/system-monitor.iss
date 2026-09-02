@@ -43,7 +43,6 @@ Source: "..\go\lhm-dump\bin\Release\net472\lhm-dump.exe"; DestDir: "{app}"; Flag
 Source: "..\go\lhm-dump\bin\Release\net472\*.dll"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 ; Config e schema
 Source: "..\config.toml.example"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\.env.example"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "..\sql\schema.sql"; DestDir: "{app}\sql"; Flags: ignoreversion
 Source: "..\scripts\install_tasks_go.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 Source: "..\scripts\install_retention_go.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion

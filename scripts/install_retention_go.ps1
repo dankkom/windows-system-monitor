@@ -16,7 +16,7 @@ if (-not (Test-Path $GoExe)) {
 
 # Valida DATABASE_URL e schema antes de registrar
 & $GoExe --init 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) { Write-Warning "Aviso: --init falhou, verifique DATABASE_URL em .env" }
+if ($LASTEXITCODE -ne 0) { Write-Warning "Aviso: --init falhou, verifique DATABASE_URL em config.toml" }
 
 $Action = New-ScheduledTaskAction -Execute $GoExe -Argument "--retention" -WorkingDirectory $Root
 $Trigger = New-ScheduledTaskTrigger -Daily -At 02:00

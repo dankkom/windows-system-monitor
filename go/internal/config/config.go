@@ -1,5 +1,4 @@
-// Package config loads runtime settings from config.toml (preferred) and environment,
-// with fallback to legacy .env for backwards compatibility.
+// Package config loads runtime settings from config.toml and environment.
 package config
 
 import (
@@ -97,30 +96,6 @@ type fileConfig struct {
 	} `toml:"log"`
 }
 
-// loadDotEnv applies KEY=VALUE pairs from path into the environment, skipping
-// lines already set. Kept for backwards compatibility when config.toml is absent.
-func loadDotEnv(path string) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, val, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		val = strings.Trim(strings.TrimSpace(val), `"'`)
-		if _, exists := os.LookupEnv(key); !exists {
-			_ = os.Setenv(key, val)
-		}
-	}
-}
-
 // RequireDatabaseURL resolves and validates DATABASE_URL.
 func (s *Settings) RequireDatabaseURL() (string, error) {
 	url := strings.TrimSpace(os.Getenv("DATABASE_URL"))
@@ -172,7 +147,7 @@ func nonnegativeFloat(name string, def float64, hasDefault bool) (float64, bool)
 	return v, true
 }
 
-// baseDir resolves the project/install root by searching for config.toml or .env upwards.
+// baseDir resolves the project/install root by searching for config.toml upwards.
 func baseDir() string {
 	wd, err := os.Getwd()
 	if err != nil {
@@ -184,19 +159,11 @@ func baseDir() string {
 			abs, _ := filepath.Abs(cand)
 			return abs
 		}
-		if _, err := os.Stat(filepath.Join(cand, ".env")); err == nil {
-			abs, _ := filepath.Abs(cand)
-			return abs
-		}
 	}
 	if exe, err := os.Executable(); err == nil {
 		dir := filepath.Dir(exe)
 		for _, cand := range []string{dir, filepath.Join(dir, ".."), filepath.Join(dir, "..", "..")} {
 			if _, err := os.Stat(filepath.Join(cand, "config.toml")); err == nil {
-				abs, _ := filepath.Abs(cand)
-				return abs
-			}
-			if _, err := os.Stat(filepath.Join(cand, ".env")); err == nil {
 				abs, _ := filepath.Abs(cand)
 				return abs
 			}
@@ -230,26 +197,10 @@ func findConfigFile(base string) (string, *fileConfig) {
 }
 
 // Load reads and validates settings from config.toml, env vars and defaults.
-// Precedence: env var > config.toml > default. .env is loaded only as fallback.
+// Precedence: env var > config.toml > default.
 func Load() *Settings {
 	base := baseDir()
 	configPath, fc := findConfigFile(base)
-
-	// Fallback to legacy .env if no config.toml found
-	if fc == nil {
-		loadDotEnv(filepath.Join(base, ".env"))
-		if os.Getenv("DATABASE_URL") == "" {
-			loadDotEnv(filepath.Join(base, "..", ".env"))
-		}
-		// also try exe dir .env
-		if os.Getenv("DATABASE_URL") == "" {
-			if exe, err := os.Executable(); err == nil {
-				dir := filepath.Dir(exe)
-				loadDotEnv(filepath.Join(dir, ".env"))
-				loadDotEnv(filepath.Join(dir, "..", ".env"))
-			}
-		}
-	}
 
 	// helpers that respect env > toml > default
 	intOr := func(envName string, tomlVal, def int) int {

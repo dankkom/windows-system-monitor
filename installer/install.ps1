@@ -90,7 +90,6 @@ if (Test-Path $LhmSrcDir) {
 }
 # Config
 Copy-Item (Join-Path $Root "config.toml.example") (Join-Path $InstallDir "config.toml.example") -Force -ErrorAction SilentlyContinue
-Copy-Item (Join-Path $Root ".env.example") (Join-Path $InstallDir ".env.example") -Force -ErrorAction SilentlyContinue
 
 # Gera config.toml com senha em texto plano (decisão do usuário)
 $encUser = [Uri]::EscapeDataString($DbUser)
