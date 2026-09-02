@@ -48,7 +48,6 @@ function metric(title, id, key, tall=false){
   return `<div class="metric"><h3>${escapeHTML(title)}</h3><div class="chart-wrap${tall?' tall':''}"><canvas id="${id}"></canvas></div>${info(key)}</div>`;
 }
 function card(label, value, tone=''){ return `<div class="card ${tone}"><span>${escapeHTML(label)}</span><strong>${escapeHTML(value ?? '—')}</strong></div>`; }
-
 function init(){
   els.tabs=document.querySelectorAll('nav#tabs button'); els.panels=document.querySelectorAll('.tab');
   els.win=document.getElementById('window'); els.winHint=document.getElementById('window-hint');
@@ -161,15 +160,15 @@ function upsertChart(id,labels,datasets,extra={}){
   canvas.parentElement.querySelector('.chart-empty')?.remove();
   if(typeof Chart==='undefined'||window.chartLoadError){emptyChart(id,'Chart.js indisponível');return;}
   const options={responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},spanGaps:false,
-    plugins:{legend:{labels:{color:'#8a94a6',boxWidth:12,font:{size:11}}},decimation:{enabled:true},tooltip:{callbacks:{title:i=>i[0]?.label||''}}},
-    scales:{x:{ticks:{color:'#6b7585',maxTicksLimit:5,maxRotation:0,callback:function(v){const l=this.getLabelForValue(v);return typeof l==='string'&&l.includes('T')?fmtAxisTime(l):l;}},grid:{color:'rgba(255,255,255,.06)'}},y:{ticks:{color:'#6b7585'},grid:{color:'rgba(255,255,255,.06)'}}},...extra};
+    plugins:{legend:{labels:{color:'#c4cdd9',boxWidth:18,boxHeight:8,usePointStyle:true,font:{size:13,weight:'500'}}},decimation:{enabled:true},tooltip:{backgroundColor:'rgba(20,28,44,0.96)',titleColor:'#f2f5f9',bodyColor:'#e0e5ec',borderColor:'rgba(255,255,255,0.14)',borderWidth:1,padding:12,cornerRadius:10,callbacks:{title:i=>i[0]?.label||''}}},
+    scales:{x:{ticks:{color:'#c4cdd9',maxTicksLimit:6,maxRotation:0,font:{size:12},callback:function(v){const l=this.getLabelForValue(v);return typeof l==='string'&&l.includes('T')?fmtAxisTime(l):l;}},grid:{color:'rgba(255,255,255,0.06)'}},y:{ticks:{color:'#c4cdd9',font:{size:13},maxTicksLimit:7},grid:{color:'rgba(255,255,255,0.06)'}}},...extra};
   if(S.charts[id]){S.charts[id].data={labels,datasets};S.charts[id].options=options;S.charts[id].update('none');return;}
   S.charts[id]=new Chart(canvas.getContext('2d'),{type:datasets[0]?.type||'line',data:{labels,datasets},options});
 }
 function fmtAxisTime(value){const d=new Date(value);return Number.isNaN(d.getTime())?String(value):d.toLocaleString([],S.win.includes('day')?{month:'2-digit',day:'2-digit',hour:'2-digit'}:{hour:'2-digit',minute:'2-digit'});}
 function aligned(rows,groupField,valueField){
   const labels=[...new Set(rows.map(r=>r.ts))].sort(); const groups=[...new Set(rows.map(r=>r[groupField]))];
-  return {labels,datasets:groups.slice(0,8).map((group,i)=>{const values=new Map(rows.filter(r=>r[groupField]===group).map(r=>[r.ts,r[valueField]]));return {label:group,data:labels.map(ts=>values.has(ts)?values.get(ts):null),borderColor:COLORS[i%COLORS.length],pointRadius:0,tension:.15};})};
+  return {labels,datasets:groups.slice(0,8).map((group,i)=>{const values=new Map(rows.filter(r=>r[groupField]===group).map(r=>[r.ts,r[valueField]]));return {label:group,data:labels.map(ts=>values.has(ts)?values.get(ts):null),borderColor:COLORS[i%COLORS.length],pointRadius:0,pointHitRadius:10,tension:.15,borderWidth:2.2};})};
 }
 function setOptions(id,values,current,onChange){
   const select=document.getElementById(id);if(!select)return current;
@@ -185,7 +184,7 @@ function tableHTML(rows,columns){
 function fmtBytes(value){if(value===null||value===undefined)return '—';const units=['B','KiB','MiB','GiB','TiB'];let n=Number(value),i=0;while(Math.abs(n)>=1024&&i<units.length-1){n/=1024;i++;}return `${n.toFixed(i?1:0)} ${units[i]}`;}
 function fmtWh(value){if(value===null||value===undefined)return '—';return value>=1000?`${(value/1000).toFixed(3)} kWh`:`${value.toFixed(2)} Wh`;}
 function fmtNum(value,digits=1,suffix=''){return value===null||value===undefined?'—':Number(value).toFixed(digits)+suffix;}
-function line(label,data,color,extra={}){return {label,data,borderColor:color,pointRadius:0,tension:.15,...extra};}
+function line(label,data,color,extra={}){return {label,data,borderColor:color,pointRadius:0,pointHitRadius:10,tension:.15,borderWidth:2.2,...extra};}
 
 async function updateOverview(){
   const win=encodeURIComponent(S.win);
@@ -208,7 +207,7 @@ async function updateOverview(){
   upsertChart('ov-mem',(mem||[]).map(r=>r.ts),[line('Memória %',(mem||[]).map(r=>r.used_percent),COLORS[1])]);
   upsertChart('ov-gpu',(gpu||[]).map(r=>r.ts),[line('Temperatura °C',(gpu||[]).map(r=>r.temp),COLORS[2]),line('Utilização %',(gpu||[]).map(r=>r.util),COLORS[1])]);
   upsertChart('ov-power',(power?.series||[]).map(r=>r.ts),[line('Estimado W',(power?.series||[]).map(r=>r.estimated_w),COLORS[4]),line('Medido parcial W',(power?.series||[]).map(r=>r.measured_w),COLORS[0],{borderDash:[5,4]})]);
-  upsertChart('ov-disk',(disk||[]).map(r=>r.device),[{type:'bar',label:'Usado %',data:(disk||[]).map(r=>r.used_percent),backgroundColor:COLORS[0]}],{scales:{x:{ticks:{color:'#8a94a6'}},y:{max:100,ticks:{color:'#8a94a6'},grid:{color:'rgba(255,255,255,.06)'}}}});
+  upsertChart('ov-disk',(disk||[]).map(r=>r.device),[{type:'bar',label:'Usado %',data:(disk||[]).map(r=>r.used_percent),backgroundColor:COLORS[0],borderRadius:8}],{scales:{x:{ticks:{color:'#c4cdd9',font:{size:13}}},y:{max:100,ticks:{color:'#c4cdd9',font:{size:13}},grid:{color:'rgba(255,255,255,0.06)'}}}});
   document.getElementById('ov-net').innerHTML=tableHTML((net||[]).map(r=>({iface:r.iface,estado:r.is_up?'up':'down',rx:fmtBytes(r.recv),tx:fmtBytes(r.sent)})),[['iface','Interface'],['estado','Estado'],['rx','Recebido total'],['tx','Enviado total']]);
 }
 
@@ -262,7 +261,7 @@ async function updateNet(){
   upsertChart('net-cumulative',labels,[line('Recebido GiB',rows.map(r=>r.recv/GIB),COLORS[0]),line('Enviado GiB',rows.map(r=>r.sent/GIB),COLORS[1])]);
   upsertChart('net-packets',labels,[line('RX pps',rows.map(r=>r.recv_pps),COLORS[0]),line('TX pps',rows.map(r=>r.sent_pps),COLORS[1])]);
   upsertChart('net-errors',labels,[line('Erros RX',rows.map(r=>r.errin),COLORS[2]),line('Erros TX',rows.map(r=>r.errout),COLORS[4]),line('Drops RX',rows.map(r=>r.dropin),COLORS[3]),line('Drops TX',rows.map(r=>r.dropout),COLORS[5])]);
-  upsertChart('net-util',labels,[line('Utilização %',rows.map(r=>r.utilization_percent),COLORS[4])],{scales:{x:{ticks:{color:'#6b7585',maxTicksLimit:5}},y:{min:0,max:100,ticks:{color:'#6b7585'},grid:{color:'rgba(255,255,255,.06)'}}}});
+  upsertChart('net-util',labels,[line('Utilização %',rows.map(r=>r.utilization_percent),COLORS[4])],{scales:{x:{ticks:{color:'#c4cdd9',font:{size:13},maxTicksLimit:6}},y:{min:0,max:100,ticks:{color:'#c4cdd9',font:{size:13}},grid:{color:'rgba(255,255,255,0.06)'}}}});
 }
 
 async function updateProcesses(){const rows=await fetchJSON('/api/processes');document.getElementById('proc-table').innerHTML=tableHTML(rows.map(r=>({nome:r.name,pid:r.pid,cpu:fmtNum(r.cpu,1,'%'),mem:fmtNum(r.mem,1,'%'),rss:fmtNum(r.rss_mb,0,' MiB'),usuario:r.user})),[['nome','Processo'],['pid','PID'],['cpu','CPU'],['mem','Memória'],['rss','RSS'],['usuario','Usuário']]);}
