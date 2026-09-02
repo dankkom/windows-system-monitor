@@ -153,7 +153,7 @@ begin
       Result := Result + C
     else
     begin
-      Hex := IntToHex(Ord(C), 2);
+      Hex := '0123456789ABCDEF'[Ord(C) div 16 + 1] + '0123456789ABCDEF'[Ord(C) mod 16 + 1];
       Result := Result + '%' + Hex;
     end;
   end;
