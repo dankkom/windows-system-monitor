@@ -2,10 +2,17 @@ package collectors
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/disk"
 )
+
+// normalizeDevice strips trailing backslash from Windows device/mount paths so
+// "C:" and "C:\" collapse to a single partition (avoids duplicate disks).
+func normalizeDevice(s string) string {
+	return strings.TrimRight(s, `\`)
+}
 
 // CollectDiskIO mirrors collectors.psutil_collectors.collect_disk_io.
 func CollectDiskIO(hostname string, ts time.Time) (Result, error) {
@@ -24,7 +31,7 @@ func CollectDiskIO(hostname string, ts time.Time) (Result, error) {
 			"busy_time": c.IoTime,
 		})
 		rows = append(rows, []any{
-			ts, hostname, dev,
+			ts, hostname, normalizeDevice(dev),
 			int64(c.ReadCount), int64(c.WriteCount),
 			int64(c.ReadBytes), int64(c.WriteBytes),
 			int64(c.ReadTime), int64(c.WriteTime),
@@ -44,11 +51,13 @@ func CollectDiskUsage(hostname string, ts time.Time) (Result, error) {
 	}
 	rows := [][]any{}
 	for _, p := range parts {
+		dev := normalizeDevice(p.Device)
+		mnt := normalizeDevice(p.Mountpoint)
 		usage, err := disk.Usage(p.Mountpoint)
 		if err != nil || usage == nil {
 			raw, _ := json.Marshal(map[string]any{"error": errText(err)})
 			rows = append(rows, []any{
-				ts, hostname, p.Device, p.Mountpoint, p.Fstype,
+				ts, hostname, dev, mnt, p.Fstype,
 				nil, nil, nil, nil, json.RawMessage(string(raw)),
 			})
 			continue
@@ -61,7 +70,7 @@ func CollectDiskUsage(hostname string, ts time.Time) (Result, error) {
 			},
 		})
 		rows = append(rows, []any{
-			ts, hostname, p.Device, p.Mountpoint, p.Fstype,
+			ts, hostname, dev, mnt, p.Fstype,
 			int64(usage.Total), int64(usage.Used), int64(usage.Free),
 			float64(usage.UsedPercent), json.RawMessage(raw),
 		})

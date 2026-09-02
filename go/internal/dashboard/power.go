@@ -19,10 +19,11 @@ var windowSeconds = map[string]int{
 
 func powerSourcePriority(name string) int {
 	norm := strings.ToLower(name)
-	if strings.Contains(norm, "cpu package") {
+	// LHM/sensor names: "cpu package", "CPU Package", "cpu:package", or bare "Package"
+	if strings.Contains(norm, "cpu package") || norm == "package" {
 		return 0
 	}
-	if strings.Contains(norm, "cpu platform") {
+	if strings.Contains(norm, "cpu platform") || strings.Contains(norm, "processor platform") {
 		return 1
 	}
 	parts := strings.Split(norm, ":")
@@ -231,6 +232,16 @@ func QPower(ctx context.Context, pool *pgxpool.Pool, cfg *config.Settings, windo
 			}
 			v := (*cpu + gpuPart + cfg.PowerAuxBaselineW) / cfg.PowerPSUEfficiency
 			estimated = &v
+		} else if gpuMeasured != nil || gpuEstimated != nil {
+			// CPU power sensor not detected — estimate from GPU + AUX baseline
+			gpuPart := 0.0
+			if gpuMeasured != nil {
+				gpuPart = *gpuMeasured
+			} else if gpuEstimated != nil {
+				gpuPart = *gpuEstimated
+			}
+			v := (gpuPart + cfg.PowerAuxBaselineW) / cfg.PowerPSUEfficiency
+			estimated = &v
 		}
 		actualTS := raw["actual_ts"].(time.Time)
 		series = append(series, powerPoint{TS: actualTS, TSStr: actualTS.Format(time.RFC3339Nano), CPU: cpu, GPUMeasured: gpuMeasured, GPUEstimated: gpuEstimated, Measured: measured, Estimated: estimated})
@@ -327,7 +338,13 @@ func QPower(ctx context.Context, pool *pgxpool.Pool, cfg *config.Settings, windo
 
 	defaults := cfg.PowerAuxBaselineW == 30.0 && cfg.PowerPSUEfficiency == 0.90
 	quality := "estimated_calibrated"
-	if !gpuMeasuredAvail && !gpuModel {
+	if cpuName == nil {
+		// CPU power sensor não detectado — estimativa parcial (GPU + baseline)
+		quality = "estimated_no_cpu"
+		if !gpuMeasuredAvail && !gpuModel {
+			quality = "partial"
+		}
+	} else if !gpuMeasuredAvail && !gpuModel {
 		quality = "partial"
 	} else if defaults {
 		quality = "estimated_default"
