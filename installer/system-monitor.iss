@@ -51,7 +51,7 @@ Source: "install_optional.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
 
 [Icons]
-Name: "{group}\Dashboard (http://localhost:8501)"; Filename: "http://localhost:8501"
+Name: "{group}\Dashboard"; Filename: "http://localhost:8501"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 
 [Run]
