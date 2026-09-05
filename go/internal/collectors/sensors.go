@@ -1,6 +1,7 @@
 package collectors
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -28,7 +29,9 @@ func CollectSensors(hostname string, ts time.Time) (Result, error) {
 			Rows:    [][]any{{ts, hostname, "no_sensor", "no_sensor", nil, nil, nil, json.RawMessage(raw)}},
 		}, nil
 	}
-	out, err := exec.Command(helper).Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, helper).Output()
 	if err != nil {
 		raw, _ := json.Marshal(map[string]any{"error": err.Error()})
 		return Result{

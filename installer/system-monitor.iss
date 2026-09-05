@@ -1,7 +1,7 @@
 ; Inno Setup script for system-monitor (Go + lhm-dump + schema + config.toml)
 ; Requer Inno Setup 6.x. Build via CI ou local: iscc installer/system-monitor.iss
 #define MyAppName "System Monitor"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "dankkom"
 #define MyAppURL "https://github.com/dankkom/windows-system-monitor"
 
@@ -57,11 +57,11 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 [Run]
 ; Opcionais e Postgres sao tratados em [Code] CurStepChanged; aqui so fallback se Code nao rodou
 Filename: "{app}\system-monitor.exe"; Parameters: "--init"; WorkingDir: "{app}"; Flags: runhidden; StatusMsg: "Inicializando banco de dados..."
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install_tasks_go.ps1"""; Flags: runhidden; StatusMsg: "Registrando tarefas agendadas..."
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install_retention_go.ps1"""; Flags: runhidden
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install_tasks_go.ps1"" -InstallDir ""{app}"""; WorkingDir: "{app}"; Flags: runhidden; StatusMsg: "Registrando tarefas agendadas..."
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install_retention_go.ps1"" -InstallDir ""{app}"""; WorkingDir: "{app}"; Flags: runhidden
 
 [UninstallRun]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Unregister-ScheduledTask -TaskName 'SystemMonitor' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Dashboard' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Retention' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Go' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Go-Dashboard' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Go-Retention' -Confirm:$false -ErrorAction SilentlyContinue"""; Flags: runhidden
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Stop-ScheduledTask -TaskName 'SystemMonitor' -ErrorAction SilentlyContinue; Stop-ScheduledTask -TaskName 'SystemMonitor-Dashboard' -ErrorAction SilentlyContinue; Stop-ScheduledTask -TaskName 'SystemMonitor-Retention' -ErrorAction SilentlyContinue; Stop-Process -Name 'system-monitor' -Force -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Dashboard' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Retention' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Go' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Go-Dashboard' -Confirm:$false -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName 'SystemMonitor-Go-Retention' -Confirm:$false -ErrorAction SilentlyContinue"""; Flags: runhidden
 
 [Code]
 var
@@ -245,6 +245,9 @@ begin
 
     SaveStringToFile(ConfigPath, ConfigContent, False);
 
+    { Protege config.toml contra leitura por usuarios comuns }
+    Exec('icacls.exe', '"' + ConfigPath + '" /inheritance:r /grant:r "SYSTEM:(R,W)" /grant:r "Administrators:(R,W)"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
     { Instala PostgreSQL se marcado }
     if InstallPGCheck.Checked then
     begin
@@ -267,5 +270,14 @@ begin
 
     { Roda --init com o config.toml recém-gerado (pode falhar se PG ainda subindo, Run fallback tenta de novo) }
     Exec(ExpandConstant('{app}\system-monitor.exe'), '--init', ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+    { Informa ao usuario se uma senha de banco foi gerada automaticamente }
+    if GeneratedPassword <> '' then
+    begin
+      MsgBox('O PostgreSQL foi configurado com uma senha gerada automaticamente:' + #13#10 + #13#10 +
+             'Senha: ' + GeneratedPassword + #13#10 + #13#10 +
+             'Esta senha foi salva em: ' + ConfigPath + #13#10 +
+             'Guarde-a para gerenciar o banco de dados futuramente.', mbInformation, MB_OK);
+    end;
   end;
 end;

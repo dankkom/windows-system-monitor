@@ -253,23 +253,6 @@ func Load() *Settings {
 		hostname, _ = os.Hostname()
 	}
 
-	connectTimeout := time.Duration(intOr("DATABASE_CONNECT_TIMEOUT", 0, 0)) * time.Second
-	if connectTimeout == 0 {
-		if fc != nil && fc.DB.ConnectTimeout > 0 {
-			connectTimeout = time.Duration(fc.DB.ConnectTimeout) * time.Second
-		} else {
-			ct := positiveInt("DATABASE_CONNECT_TIMEOUT", 10)
-			// positiveInt already checks env, but we already handled env; need to avoid double
-			// So just use default if still 0
-			if ct == 10 && os.Getenv("DATABASE_CONNECT_TIMEOUT") == "" && (fc == nil || fc.DB.ConnectTimeout == 0) {
-				connectTimeout = 10 * time.Second
-			} else {
-				connectTimeout = time.Duration(ct) * time.Second
-			}
-		}
-	}
-	// Simplified: use helper that already covered env, just handle toml/default
-	// Recompute correctly for connect/retry/buffer
 	ctVal := intOr("DATABASE_CONNECT_TIMEOUT", 0, 0)
 	if ctVal == 0 {
 		if fc != nil && fc.DB.ConnectTimeout > 0 {
@@ -278,7 +261,7 @@ func Load() *Settings {
 			ctVal = 10
 		}
 	}
-	connectTimeout = time.Duration(ctVal) * time.Second
+	connectTimeout := time.Duration(ctVal) * time.Second
 
 	retryVal := intOr("DATABASE_RETRY_SECONDS", 0, 0)
 	if retryVal == 0 {
@@ -299,46 +282,17 @@ func Load() *Settings {
 		}
 	}
 
-	// Power
-	var baseline float64
-	var baselineOk bool
-	if v := strings.TrimSpace(os.Getenv("POWER_AUX_BASELINE_W")); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 {
-			baseline = f
-			baselineOk = true
-		}
-	} else if fc != nil && fc.Power.AuxBaselineW != 0 {
-		baseline = fc.Power.AuxBaselineW
-		baselineOk = true
-	} else {
-		baseline = 30.0
-		baselineOk = true
-		// check env fallback that was already handled via nonnegativeFloat
-		if !baselineOk {
-			baseline = 24
-		}
-	}
-	// Use existing nonnegativeFloat for backwards compat, but override if fc has value and env absent
-	if os.Getenv("POWER_AUX_BASELINE_W") == "" && fc != nil && fc.Power.AuxBaselineW != 0 {
-		baseline = fc.Power.AuxBaselineW
-	} else if os.Getenv("POWER_AUX_BASELINE_W") == "" && fc == nil {
-		// use default from original
-		baseline = 30.0
-		if baselineOk == false {
-			baseline = 24
-		}
-	}
-	// Actually simpler: respect env > toml > default 30
-	baseline, _ = func() (float64, bool) {
+	// Power: env > toml > default 30.0W
+	baseline := func() float64 {
 		if v := strings.TrimSpace(os.Getenv("POWER_AUX_BASELINE_W")); v != "" {
 			if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 {
-				return f, true
+				return f
 			}
 		}
 		if fc != nil && fc.Power.AuxBaselineW != 0 {
-			return fc.Power.AuxBaselineW, true
+			return fc.Power.AuxBaselineW
 		}
-		return 30.0, true
+		return 30.0
 	}()
 
 	efficiency := func() float64 {

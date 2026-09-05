@@ -70,13 +70,28 @@ if (-not $PSBoundParameters.ContainsKey('InstallPostgres') -and -not $NonInterac
 $GoSrc = Join-Path $Root "go\system-monitor.exe"
 $LhmSrcDir = Join-Path $Root "build\lhm-dump"
 if (-not $SkipBuild) {
-    Write-Host "Building system-monitor.exe..." -ForegroundColor Cyan
-    $goBin = "C:\Program Files\Go\bin\go.exe"; if (-not (Test-Path $goBin)) { $goBin = "go" }
-    & $goBin build -o $GoSrc ./go/cmd/monitor
-    if ($LASTEXITCODE -ne 0) { throw "go build falhou" }
-    Write-Host "Publishing lhm-dump..." -ForegroundColor Cyan
-    & dotnet publish (Join-Path $Root "go\lhm-dump\lhm-dump.csproj") -c Release -o $LhmSrcDir 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { Write-Warning "dotnet publish falhou, helper pode ficar ausente (sensores -> no_sensor)" }
+    $goBin = "C:\Program Files\Go\bin\go.exe"
+    if (-not (Test-Path $goBin)) { $goBin = (Get-Command go -ErrorAction SilentlyContinue).Source }
+    if ($goBin -and (Test-Path $goBin)) {
+        Write-Host "Compilando system-monitor.exe via Go..." -ForegroundColor Cyan
+        & $goBin build -o $GoSrc (Join-Path $Root "go\cmd\monitor")
+        if ($LASTEXITCODE -ne 0) { throw "go build falhou" }
+    } elseif (Test-Path $GoSrc) {
+        Write-Host "Go não encontrado no PATH, utilizando binário existente em '$GoSrc'." -ForegroundColor Yellow
+    } else {
+        throw "Go não está instalado e '$GoSrc' não existe. Instale Go ou forneça o binário compilado."
+    }
+
+    $dotnetBin = (Get-Command dotnet -ErrorAction SilentlyContinue).Source
+    if ($dotnetBin -and (Test-Path $dotnetBin)) {
+        Write-Host "Publicando lhm-dump via dotnet..." -ForegroundColor Cyan
+        & $dotnetBin publish (Join-Path $Root "go\lhm-dump\lhm-dump.csproj") -c Release -o $LhmSrcDir 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Warning "dotnet publish falhou, helper pode ficar ausente (sensores -> no_sensor)" }
+    } elseif (Test-Path (Join-Path $LhmSrcDir "lhm-dump.exe")) {
+        Write-Host ".NET SDK não encontrado, utilizando lhm-dump pré-compilado em '$LhmSrcDir'." -ForegroundColor Yellow
+    } else {
+        Write-Warning ".NET SDK não encontrado e lhm-dump não compilado. O coletor de sensores usará fallback no_sensor."
+    }
 }
 
 New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
@@ -155,8 +170,13 @@ level = "INFO"
 "@
 $configPath = Join-Path $InstallDir "config.toml"
 $configToml | Set-Content -Path $configPath -Encoding utf8
-Write-Host "Gerado $configPath" -ForegroundColor Green
-Write-Host "DATABASE_URL=$databaseUrl" -ForegroundColor Gray
+try {
+    # Protege config.toml permitindo leitura/escrita apenas para SYSTEM e Administradores
+    & icacls $configPath /inheritance:r /grant:r "SYSTEM:(R,W)" /grant:r "Administrators:(R,W)" 2>&1 | Out-Null
+} catch {}
+Write-Host "Gerado $configPath (permissões restritas a SYSTEM e Administradores)" -ForegroundColor Green
+$maskedUrl = "postgresql://${encUser}:********@${encHost}:${DbPort}/${DbName}"
+Write-Host "DATABASE_URL=$maskedUrl" -ForegroundColor Gray
 
 New-Item -ItemType Directory -Path (Join-Path $InstallDir "sql") -Force | Out-Null
 Copy-Item (Join-Path $Root "sql\schema.sql") (Join-Path $InstallDir "sql\schema.sql") -Force
@@ -183,8 +203,8 @@ Write-Host "Aplicando schema (system-monitor --init)..." -ForegroundColor Cyan
 if ($LASTEXITCODE -ne 0) { Write-Warning "init falhou - verifique config.toml DATABASE_URL e se PostgreSQL está rodando" }
 
 Write-Host "Registrando tarefas SYSTEM..." -ForegroundColor Cyan
-& (Join-Path $InstallDir "install_tasks_go.ps1")
-& (Join-Path $InstallDir "install_retention_go.ps1") 2>&1 | Write-Host
+& (Join-Path $InstallDir "install_tasks_go.ps1") -InstallDir $InstallDir
+& (Join-Path $InstallDir "install_retention_go.ps1") -InstallDir $InstallDir 2>&1 | Write-Host
 Write-Host "Instalação concluída em $InstallDir" -ForegroundColor Green
 Write-Host "Dashboard: http://localhost:8501  (SystemMonitor / SystemMonitor-Dashboard)"
-Write-Host "Config: $configPath  (senha em texto plano)"
+Write-Host "Config: $configPath"

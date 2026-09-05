@@ -33,8 +33,9 @@ $installed = $false
 if (Get-Command winget -ErrorAction SilentlyContinue) {
     Write-Host "Tentando winget install PostgreSQL.PostgreSQL..." -ForegroundColor Cyan
     try {
-        # winget instala PostgreSQL EDB silencioso
-        $wingetArgs = @("install", "--id", "PostgreSQL.PostgreSQL", "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements")
+        # winget instala PostgreSQL EDB silencioso passando a senha e porta
+        $overrideArgs = "--mode unattended --superpassword ""$SuperPassword"" --serverport $Port"
+        $wingetArgs = @("install", "--id", "PostgreSQL.PostgreSQL", "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--override", $overrideArgs)
         & winget @wingetArgs 2>&1 | Out-String | Write-Host
         if ($LASTEXITCODE -eq 0) { $installed = $true }
     } catch { Write-Warning "winget falhou: $_" }

@@ -175,10 +175,10 @@ func runLoop(cfg *config.Settings) error {
 	defer store.Close()
 	ctx := context.Background()
 	if err := store.EnsureSchema(ctx); err != nil {
-		log.Printf("schema check failed: %v", err)
-		return err
+		log.Printf("initial schema check warning: %v (will retry in background via spool)", err)
+	} else {
+		log.Printf("schema OK")
 	}
-	log.Printf("schema OK")
 
 	lastRun := map[string]time.Time{}
 	for name := range collectorFuncs(cfg) {
@@ -395,10 +395,3 @@ func runRetention(cfg *config.Settings, dry bool) error {
 }
 
 func stringsHasEmptyHost(h string) bool { return h == "" || h == "0.0.0.0" }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

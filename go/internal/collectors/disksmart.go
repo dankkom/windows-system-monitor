@@ -1,6 +1,7 @@
 package collectors
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -75,14 +76,18 @@ func CollectDiskSmart(hostname string, ts time.Time) (Result, error) {
 		}
 		smartctl = "smartctl"
 	}
-	scanOut, _ := exec.Command(smartctl, "--scan").Output()
+	scanCtx, scanCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer scanCancel()
+	scanOut, _ := exec.CommandContext(scanCtx, smartctl, "--scan").Output()
 	devices := parseScan(string(scanOut))
 	if len(devices) == 0 {
-		devices = []string{"/dev/sda", "/dev/sdb", "/dev/sdc", "/dev/sdd"}
+		devices = []string{"/dev/sda", "/dev/sdb", "/dev/pd0", "/dev/pd1"}
 	}
 	rows := [][]any{}
 	for _, dev := range devices {
-		out, err := exec.Command(smartctl, "-a", dev, "-j").Output()
+		devCtx, devCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		out, err := exec.CommandContext(devCtx, smartctl, "-a", dev, "-j").Output()
+		devCancel()
 		if err != nil {
 			// smartctl returns non-zero on warnings; still has output
 			if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) == 0 {

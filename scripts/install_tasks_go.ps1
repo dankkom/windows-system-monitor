@@ -1,16 +1,35 @@
-# Registra as tarefas persistentes para o binario Go; requer PowerShell elevado.
+param(
+    [string]$InstallDir = ""
+)
 $ErrorActionPreference = "Stop"
-$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $isAdmin = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) { throw "Execute este script como Administrador." }
 
-$GoExe = Join-Path $Root "go\system-monitor.exe"
+# Resolve diretorio do app e do executavel
+if ($InstallDir -and (Test-Path $InstallDir)) {
+    $WorkingDir = (Resolve-Path $InstallDir).Path
+    $GoExe = Join-Path $WorkingDir "system-monitor.exe"
+} elseif (Test-Path (Join-Path $PSScriptRoot "system-monitor.exe")) {
+    $WorkingDir = (Resolve-Path $PSScriptRoot).Path
+    $GoExe = Join-Path $WorkingDir "system-monitor.exe"
+} elseif (Test-Path (Join-Path $PSScriptRoot "..\system-monitor.exe")) {
+    $WorkingDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+    $GoExe = Join-Path $WorkingDir "system-monitor.exe"
+} else {
+    $WorkingDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+    $GoExe = Join-Path $WorkingDir "go\system-monitor.exe"
+}
+
 if (-not (Test-Path $GoExe)) {
-    Write-Host "Compilando system-monitor.exe..." -ForegroundColor Cyan
     $goBin = "C:\Program Files\Go\bin\go.exe"
-    if (-not (Test-Path $goBin)) { $goBin = "go" }
-    & $goBin build -o $GoExe ./go/cmd/monitor
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $GoExe)) { throw "Falha ao compilar Go binary." }
+    if (-not (Test-Path $goBin)) { $goBin = (Get-Command go -ErrorAction SilentlyContinue).Source }
+    if ($goBin -and (Test-Path $goBin)) {
+        Write-Host "Compilando system-monitor.exe..." -ForegroundColor Cyan
+        & $goBin build -o $GoExe (Join-Path $WorkingDir "go\cmd\monitor")
+    }
+    if (-not (Test-Path $GoExe)) {
+        throw "Executável system-monitor.exe não encontrado em '$GoExe'. Instale ou compile primeiro."
+    }
 }
 
 # Verifica schema
@@ -22,11 +41,12 @@ $ErrorActionPreference = "Stop"
 
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -MultipleInstances IgnoreNew
 $trigger = New-ScheduledTaskTrigger -AtStartup
+$dashboardTrigger = New-ScheduledTaskTrigger -AtStartup -RandomDelay (New-TimeSpan -Seconds 30)
 $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 
 # Go binary: collector loop (default) e dashboard (--serve) como tarefas separadas
-$monitorAction = New-ScheduledTaskAction -Execute $GoExe -WorkingDirectory $Root
-$dashboardAction = New-ScheduledTaskAction -Execute $GoExe -Argument "--serve" -WorkingDirectory $Root
+$monitorAction = New-ScheduledTaskAction -Execute $GoExe -WorkingDirectory $WorkingDir
+$dashboardAction = New-ScheduledTaskAction -Execute $GoExe -Argument "--serve" -WorkingDirectory $WorkingDir
 
 "SystemMonitor", "SystemMonitor-Dashboard", "SystemMonitor-Go", "SystemMonitor-Go-Dashboard" | ForEach-Object {
     $existing = Get-ScheduledTask -TaskName $_ -ErrorAction SilentlyContinue
@@ -35,7 +55,7 @@ $dashboardAction = New-ScheduledTaskAction -Execute $GoExe -Argument "--serve" -
 
 # Registra com nomes novos (SystemMonitor); mantém limpeza de antigos Go para migração
 Register-ScheduledTask -TaskName "SystemMonitor" -Action $monitorAction -Trigger $trigger -Settings $settings -Principal $principal -Description "Coleta de telemetria no boot" -Force | Out-Null
-Register-ScheduledTask -TaskName "SystemMonitor-Dashboard" -Action $dashboardAction -Trigger $trigger -Settings $settings -Principal $principal -Description "Dashboard no boot" -Force | Out-Null
+Register-ScheduledTask -TaskName "SystemMonitor-Dashboard" -Action $dashboardAction -Trigger $dashboardTrigger -Settings $settings -Principal $principal -Description "Dashboard no boot" -Force | Out-Null
 
 Start-ScheduledTask -TaskName "SystemMonitor"
 Start-ScheduledTask -TaskName "SystemMonitor-Dashboard"

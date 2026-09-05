@@ -1,7 +1,9 @@
 package collectors
 
 import (
+	"context"
 	"encoding/json"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -140,20 +142,44 @@ func CollectGPU(hostname string, ts time.Time) (Result, error) {
 	return Result{Table: "monitor.gpu", Columns: cols, Rows: rows}, nil
 }
 
+func findNvidiaSMI() string {
+	if p, err := exec.LookPath("nvidia-smi"); err == nil {
+		return p
+	}
+	candidates := []string{
+		`C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe`,
+		`C:\Windows\System32\nvidia-smi.exe`,
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return ""
+}
+
 func nvidiaSMIQuery() []string {
+	bin := findNvidiaSMI()
+	if bin == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	fields := "index,name,uuid,driver_version,utilization.gpu,utilization.memory,utilization.encoder,utilization.decoder,memory.total,memory.used,memory.free,temperature.gpu,temperature.memory,power.draw,power.limit,fan.speed,clocks.current.graphics,clocks.current.memory,clocks.current.sm,pcie.tx,pcie.rx"
-	if out, err := exec.Command("nvidia-smi", "--query-gpu="+fields, "--format=csv,noheader,nounits").Output(); err == nil {
+	if out, err := exec.CommandContext(ctx, bin, "--query-gpu="+fields, "--format=csv,noheader,nounits").Output(); err == nil {
 		return strings.Split(strings.TrimSpace(string(out)), "\n")
 	}
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel2()
 	fields2 := "index,name,uuid,driver_version,utilization.gpu,utilization.memory,memory.total,memory.used,memory.free,temperature.gpu,power.draw,power.limit,fan.speed,clocks.current.graphics,clocks.current.memory"
-	if out, err := exec.Command("nvidia-smi", "--query-gpu="+fields2, "--format=csv,noheader,nounits").Output(); err == nil {
+	if out, err := exec.CommandContext(ctx2, bin, "--query-gpu="+fields2, "--format=csv,noheader,nounits").Output(); err == nil {
 		return strings.Split(strings.TrimSpace(string(out)), "\n")
 	}
 	return nil
 }
 
 func splitCSV(s string) []string {
-	// nvidia-smi CSV does not quote fields containing commas (gpu names may contain commas? rare)
-	// Simple split by comma is sufficient; names like "NVIDIA GeForce ..." have no commas.
 	return strings.Split(s, ",")
 }
